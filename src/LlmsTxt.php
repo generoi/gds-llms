@@ -110,7 +110,7 @@ class LlmsTxt
 
         $language = $this->currentLanguage();
         $body = $this->body($language);
-        $url = $language && function_exists('pll_home_url') ? pll_home_url($language).'llms.txt' : home_url('/llms.txt');
+        $url = $this->url($language);
 
         status_header(200);
         header('Content-Type: text/plain; charset=utf-8');
@@ -250,19 +250,28 @@ class LlmsTxt
      */
     protected function translationsSentence(string $language): string
     {
-        if (! function_exists('pll_home_url')) {
-            return '';
-        }
-
         $links = [];
 
         foreach ($this->languages() as $other) {
             if ($other !== '' && $other !== $language) {
-                $links[] = sprintf('[%s](%s)', $this->languageName($other), Format::linkUrl(pll_home_url($other).'llms.txt'));
+                $links[] = sprintf('[%s](%s)', $this->languageName($other), Format::linkUrl($this->url($other)));
             }
         }
 
         return $links ? 'Also available in '.implode(', ', $links).'.' : '';
+    }
+
+    /**
+     * The llms.txt URL for a language.
+     *
+     * From the language's root rather than pll_home_url(), which returns the
+     * language's static front page (`/fi/etusivu/`) where one is set.
+     */
+    protected function url(string $language): string
+    {
+        $object = $language && function_exists('PLL') ? PLL()->model->get_language($language) : false;
+
+        return $object ? PLL()->links_model->home_url($object).'llms.txt' : home_url('/llms.txt');
     }
 
     protected function markdownSentence(): string
