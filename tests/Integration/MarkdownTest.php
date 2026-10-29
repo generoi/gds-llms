@@ -106,14 +106,14 @@ class MarkdownTest extends WP_UnitTestCase
     }
 
     /**
-     * An archive has no post content of its own.
+     * An archive has no post content of its own, but its listing is built from
+     * its query (ListingsTest).
      */
-    public function test_archives_have_no_markdown_in_content_mode(): void
+    public function test_archives_have_markdown_in_content_mode(): void
     {
         $this->goToCategory();
 
-        $this->assertFalse((new Markdown)->isAvailable());
-        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
+        $this->assertStringContainsString('/category/news/index.html.md', get_echo([new Markdown, 'printAlternateLink']));
     }
 
     /**

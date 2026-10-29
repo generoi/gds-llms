@@ -4,6 +4,7 @@ namespace GeneroWP\Llms\Integrations;
 
 use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Markdown\Dom;
+use GeneroWP\Llms\Markdown\Listings;
 
 /**
  * FacetWP prints each facet as an empty placeholder and fills it with
@@ -15,11 +16,6 @@ use GeneroWP\Llms\Markdown\Dom;
  */
 class FacetWP
 {
-    /**
-     * A markdown page lists up to this many results of a FacetWP listing.
-     */
-    public const PER_PAGE = 100;
-
     public static function isActive(): bool
     {
         return function_exists('FWP');
@@ -36,23 +32,15 @@ class FacetWP
     }
 
     /**
-     * On a markdown request, a listing of up to PER_PAGE results comes on one
-     * page, so a reader has all of it in one fetch instead of following a
-     * pager; a longer one is paged in pages that size.
-     *
-     * Before FacetWP's own pre_get_posts (999) captures the query, so the
-     * result count and pager it renders follow.
+     * The listing FacetWP filters -- which may be a block's own query, not
+     * the main one -- in markdown-sized pages (see Listings). Before FacetWP's
+     * own pre_get_posts (999) captures the query, so the result count and
+     * pager it renders follow.
      */
     public static function expandListing(\WP_Query $query): void
     {
-        if (! self::isActive() || ! FWP()->request->is_main_query($query)) {
-            return;
-        }
-
-        $perPage = (int) ($query->get('posts_per_page') ?: get_option('posts_per_page'));
-
-        if ($perPage > 0 && $perPage < self::PER_PAGE) {
-            $query->set('posts_per_page', self::PER_PAGE);
+        if (self::isActive() && FWP()->request->is_main_query($query)) {
+            Listings::expand($query);
         }
     }
 
@@ -92,28 +80,13 @@ class FacetWP
         // How many results the filters give, whether or not the site shows
         // FacetWP's counts widget: a reader of one page cannot know otherwise.
         if (isset($output['settings']['pager']['total_rows'])) {
-            $count = self::countHtml($output['settings']['pager']);
+            $pager = $output['settings']['pager'];
+            $count = '<p>'.esc_html(Listings::countText((int) $pager['total_rows'], (int) ($pager['page'] ?? 1), (int) ($pager['total_pages'] ?? 1))).'</p>';
             $html = preg_replace_callback('#<div class="[^"]*\bfacetwp-template\b#', fn (array $match) => $count.$match[0], $html, 1)
                 ?? throw new \RuntimeException(sprintf('Adding the FacetWP result count failed: %s', preg_last_error_msg()));
         }
 
         return $html;
-    }
-
-    /**
-     * @param  array<string, mixed>  $pager  FacetWP's pager settings
-     */
-    protected static function countHtml(array $pager): string
-    {
-        $total = (int) $pager['total_rows'];
-        $pages = (int) ($pager['total_pages'] ?? 1);
-        $text = sprintf('%d %s', $total, $total === 1 ? 'result' : 'results');
-
-        if ($pages > 1) {
-            $text .= sprintf(', page %d of %d', (int) ($pager['page'] ?? 1), $pages);
-        }
-
-        return '<p>'.esc_html($text).'.</p>';
     }
 
     /**

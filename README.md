@@ -8,7 +8,9 @@ Serves `/llms.txt` and a markdown version of every page for language models. An 
 
 **Markdown pages** are served at the URL the proposal specifies: the page URL followed by `index.html.md` (`/about/` → `/about/index.html.md`), or `.md` where permalinks have no trailing slash. HTML pages advertise their markdown version with a `<link rel="alternate" type="text/markdown">` tag and a matching `Link` header. Two modes, set with `gds/llms/markdown_mode`:
 
-- **`content`** (default): the post content of a singular page, about two thirds the cost of rendering the page. Archives have no markdown version, and anything a template draws itself -- recipe ingredients from post meta, WooCommerce prices -- is missing.
+- **`content`** (default): the post content of a singular page, about two thirds the cost of rendering the page. Anything a template draws itself -- recipe ingredients from post meta, WooCommerce prices -- is missing. A listing (blog, category or tag, post type archive, shop) is built from its query: title and introduction, result count, each post as a link with its description and a product's price, then the pages.
+
+Either way a markdown listing has up to 100 results per page, so most come whole: archives' main queries, FacetWP listings, and Query Loop blocks that have a pager (one without is a fixed selection and keeps its size).
 - **`page`**: the whole page rendered as a visitor sees it, its `<main>` converted. Costs what the page costs, and includes template content and archives.
 
 Either way the markdown is answered after every `template_redirect` hook, so a login wall that redirects there stops it as it stops the page. Conversion follows screen-reader semantics: `aria-hidden` content and `alt=""` images are dropped, accordion questions and tab names kept, forms described by their field labels, iframes turned into links.

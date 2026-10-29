@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Integrations;
 
+use GeneroWP\Llms\Format;
 use WP_Post;
 
 class WooCommerce
@@ -21,6 +22,25 @@ class WooCommerce
             get_woocommerce_currency(),
             wc_prices_include_tax() ? 'include' : 'exclude',
         );
+    }
+
+    /**
+     * A product's price as the shop displays it (with or without tax, as it
+     * is set up) for a listing line: "129,00 €", "from 49,00 €" for a variable
+     * product. '' for anything else, and for a product sold on quote.
+     *
+     * From the price itself rather than get_price_html(), whose sale markup
+     * reads "Original price was: … Current price is: …" for screen readers.
+     */
+    public static function priceText(WP_Post $post): string
+    {
+        if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post)) || $product->get_price() === '') {
+            return '';
+        }
+
+        $price = Format::text(wc_price(wc_get_price_to_display($product)));
+
+        return $product->is_type('variable') ? 'from '.$price : $price;
     }
 
     /**

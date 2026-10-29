@@ -7,6 +7,7 @@ use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
 use WP_Post;
+use WP_Query;
 
 /**
  * A markdown version of every page, at the URL the llms.txt proposal
@@ -22,8 +23,9 @@ use WP_Post;
  * Two ways to produce it, chosen per site with `gds/llms/markdown_mode`:
  *
  * - `content` (default, ContentSource): the post content of a singular page,
- *   rendered on its own. About two thirds the cost of the page; archives have
- *   no markdown.
+ *   rendered on its own, about two thirds the cost of the page. A listing --
+ *   blog, category, post type archive, shop -- is built from its query
+ *   (ArchiveSource) rather than its template.
  * - `page` (PageSource): the whole page rendered as the visitor would see it,
  *   its `<main>` converted. Costs what the page costs, but includes what
  *   templates draw from post meta (recipe ingredients, product prices) and
@@ -51,6 +53,7 @@ class Endpoint
             // `/about.md` is rewritten to `/about`, which canonical redirect
             // would bounce to `/about/` -- the HTML page.
             add_filter('redirect_canonical', '__return_false');
+            Listings::register();
             add_action('wp_loaded', [FacetWP::class, 'expandListings']);
             // Last, so every gate on template_redirect has had its say.
             add_action('template_redirect', [$this, 'start'], PHP_INT_MAX);
@@ -177,9 +180,12 @@ class Endpoint
         $object = get_queried_object();
         $available = ! is_404() && ! is_feed() && ! is_robots() && ! is_favicon() && ! is_embed() && ! is_trackback();
 
-        // Only a singular page has post content of its own to convert.
+        // A singular page has post content of its own to convert; a listing is
+        // built from its query (ArchiveSource). Search results are neither:
+        // their URL is all query string, which has no markdown URL.
         if (self::mode() === self::MODE_CONTENT) {
-            $available = $available && is_singular() && $object instanceof WP_Post && ! post_password_required($object);
+            $single = is_singular() && $object instanceof WP_Post && ! post_password_required($object);
+            $available = $available && ($single || is_home() || is_archive());
         }
 
         /**
@@ -199,6 +205,17 @@ class Endpoint
     {
         if (! $this->isAvailable()) {
             $this->notFound();
+        }
+
+        if (self::mode() === self::MODE_CONTENT && ($listing = $this->listingQuery())) {
+            // A listing's URL without the query string, like a post's
+            // permalink: the path is what identifies it.
+            $url = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
+            $markdown = $this->renderListing($listing, $url);
+            $this->sendHeaders($markdown, $url);
+            CacheTags::send(fn () => [CoreTags::query($listing), CoreTags::queriedObject()], self::url($url));
+            echo $markdown;
+            exit;
         }
 
         if (self::mode() === self::MODE_CONTENT) {
@@ -244,6 +261,25 @@ class Endpoint
         $permalink = (string) get_permalink($post);
 
         return (new Converter($permalink))->page(FacetWP::fill((new ContentSource)->html($post), $permalink));
+    }
+
+    /**
+     * The query a content-mode listing lists, or null on a single page.
+     *
+     * A page that stands in for an archive (sage-archive-pages) stays a page:
+     * its content is what its editors built, listing included -- a FacetWP
+     * or Query Loop block -- and a second listing beside it would repeat it.
+     */
+    public function listingQuery(): ?WP_Query
+    {
+        global $wp_query;
+
+        return is_singular() ? null : $wp_query;
+    }
+
+    public function renderListing(WP_Query $query, string $url): string
+    {
+        return (new Converter($url))->page((new ArchiveSource)->html($query, $url));
     }
 
     protected function notFound(): never
