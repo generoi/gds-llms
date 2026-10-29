@@ -3,6 +3,7 @@
 namespace GeneroWP\Llms\Tests\Integration;
 
 use GeneroWP\Llms\Integrations\FacetWP;
+use GeneroWP\Llms\Markdown\Listings;
 use WP_UnitTestCase;
 
 /**
@@ -121,10 +122,10 @@ class FacetWPTest extends WP_UnitTestCase
         $other->set('posts_per_page', 8);
 
         foreach ([$listing, $long, $other] as $query) {
-            FacetWP::expandListing($query);
+            (new Listings)->expandQuery($query);
         }
 
-        $this->assertSame(FacetWP::PER_PAGE, $listing->get('posts_per_page'));
+        $this->assertSame(Listings::PER_PAGE, $listing->get('posts_per_page'));
         $this->assertSame(200, $long->get('posts_per_page'));
         $this->assertSame(8, $other->get('posts_per_page'), 'Only the listing FacetWP filters.');
     }

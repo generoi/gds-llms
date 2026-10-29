@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Tests\Integration;
 
+use GeneroWP\Llms\Markdown\ContentSource;
 use GeneroWP\Llms\Markdown\Endpoint as Markdown;
 use WP_UnitTestCase;
 
@@ -106,14 +107,14 @@ class MarkdownTest extends WP_UnitTestCase
     }
 
     /**
-     * An archive has no post content of its own.
+     * An archive has no post content of its own, but its listing is built from
+     * its query (ListingsTest).
      */
-    public function test_archives_have_no_markdown_in_content_mode(): void
+    public function test_archives_have_markdown_in_content_mode(): void
     {
         $this->goToCategory();
 
-        $this->assertFalse((new Markdown)->isAvailable());
-        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
+        $this->assertStringContainsString('/category/news/index.html.md', get_echo([new Markdown, 'printAlternateLink']));
     }
 
     /**
@@ -147,7 +148,7 @@ class MarkdownTest extends WP_UnitTestCase
             'post_content' => '<!-- wp:heading --><h2 class="wp-block-heading">Hello</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Some <a href="/x/">link</a>.</p><!-- /wp:paragraph -->',
         ]);
 
-        $markdown = (new Markdown)->renderContent($post);
+        $markdown = (new Markdown)->markdown(new ContentSource($post));
 
         $this->assertStringContainsString("---\n\n# Pumps & valves\n\n## Hello", $markdown);
         $this->assertStringContainsString('url: "'.get_permalink($post).'"', $markdown);
@@ -164,7 +165,7 @@ class MarkdownTest extends WP_UnitTestCase
         $filter = fn (string $html, \WP_Post $post) => '<p>Price: <strong>129 €</strong></p>'.$html;
 
         add_filter('gds/llms/markdown_content', $filter, 10, 2);
-        $markdown = (new Markdown)->renderContent($post);
+        $markdown = (new Markdown)->markdown(new ContentSource($post));
         remove_filter('gds/llms/markdown_content', $filter);
 
         $this->assertStringContainsString("---\n\n# Pump\n\nPrice: **129 €**\n\nBody", $markdown);

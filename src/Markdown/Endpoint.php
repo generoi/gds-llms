@@ -2,7 +2,7 @@
 
 namespace GeneroWP\Llms\Markdown;
 
-use Genero\Sage\CacheTags\Tags\CoreTags;
+use GeneroWP\Llms\Integrations\ArchivePages;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
@@ -22,8 +22,9 @@ use WP_Post;
  * Two ways to produce it, chosen per site with `gds/llms/markdown_mode`:
  *
  * - `content` (default, ContentSource): the post content of a singular page,
- *   rendered on its own. About two thirds the cost of the page; archives have
- *   no markdown.
+ *   rendered on its own, about two thirds the cost of the page. A listing --
+ *   blog, category, post type archive, shop -- is built from its query
+ *   (ArchiveSource) rather than its template.
  * - `page` (PageSource): the whole page rendered as the visitor would see it,
  *   its `<main>` converted. Costs what the page costs, but includes what
  *   templates draw from post meta (recipe ingredients, product prices) and
@@ -43,6 +44,16 @@ class Endpoint
 
     protected bool $requested = false;
 
+    protected Listings $listings;
+
+    protected ArchivePages $archivePages;
+
+    public function __construct()
+    {
+        $this->listings = new Listings;
+        $this->archivePages = new ArchivePages($this->listings);
+    }
+
     public function register(): void
     {
         $this->requested = $this->rewriteRequestUri();
@@ -51,7 +62,7 @@ class Endpoint
             // `/about.md` is rewritten to `/about`, which canonical redirect
             // would bounce to `/about/` -- the HTML page.
             add_filter('redirect_canonical', '__return_false');
-            add_action('wp_loaded', [FacetWP::class, 'expandListings']);
+            add_action('wp_loaded', [$this->listings, 'register']);
             // Last, so every gate on template_redirect has had its say.
             add_action('template_redirect', [$this, 'start'], PHP_INT_MAX);
         } else {
@@ -177,9 +188,16 @@ class Endpoint
         $object = get_queried_object();
         $available = ! is_404() && ! is_feed() && ! is_robots() && ! is_favicon() && ! is_embed() && ! is_trackback();
 
-        // Only a singular page has post content of its own to convert.
+        // A single page or a listing (see source()). Search results are
+        // neither: their URL is all query string, which has no markdown URL.
         if (self::mode() === self::MODE_CONTENT) {
-            $available = $available && is_singular() && $object instanceof WP_Post && ! post_password_required($object);
+            $available = $available && (is_singular() || is_home() || is_archive());
+        }
+
+        // Including a protected page in front of a listing: the posts page, or
+        // one standing in for an archive, whose content is its introduction.
+        if ($object instanceof WP_Post && post_password_required($object)) {
+            $available = false;
         }
 
         /**
@@ -202,25 +220,16 @@ class Endpoint
         }
 
         if (self::mode() === self::MODE_CONTENT) {
-            $post = get_queried_object();
-            if (! $post instanceof WP_Post) {
-                throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
-            }
-
-            // The post's own URLs rather than the request's: agents arrive with
-            // tracking parameters (`?utm_source=chatgpt.com`), and a query string
-            // leaves url() nothing to save the cache tags under, so an edit would
-            // never purge whatever that request put in the CDN.
-            $permalink = (string) get_permalink($post);
+            $source = $this->source();
 
             // Plain permalinks (`/?page_id=2`) have no path to give a markdown URL.
-            if (self::url($permalink) === '') {
+            if (self::url($source->url()) === '') {
                 $this->notFound();
             }
 
-            $markdown = $this->renderContent($post);
-            $this->sendHeaders($markdown, $permalink);
-            CacheTags::send(fn () => CoreTags::posts([$post]), self::url($permalink));
+            $markdown = $this->markdown($source);
+            $this->sendHeaders($markdown, $source->url());
+            CacheTags::send(fn () => $source->cacheTags(), self::url($source->url()));
             echo $markdown;
             exit;
         }
@@ -236,14 +245,31 @@ class Endpoint
     }
 
     /**
-     * The post content, converted as if it were a page's main content titled
-     * with the post title.
+     * What `content` mode converts for the page being viewed: a listing is
+     * built from its query, a single page from its content -- or, standing in
+     * for an archive (ArchivePages), as the listing it stands in for.
      */
-    public function renderContent(WP_Post $post): string
+    public function source(): Source
     {
-        $permalink = (string) get_permalink($post);
+        global $wp_query;
 
-        return (new Converter($permalink))->page(FacetWP::fill((new ContentSource)->html($post), $permalink));
+        if (! is_singular()) {
+            // Without the query string, like a post's permalink: the path is
+            // what identifies the listing.
+            return new ArchiveSource($wp_query, strtok($this->pageUrl(), '?') ?: $this->pageUrl());
+        }
+
+        $post = get_queried_object();
+        if (! $post instanceof WP_Post) {
+            throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
+        }
+
+        return $this->archivePages->source(new ContentSource($post));
+    }
+
+    public function markdown(Source $source): string
+    {
+        return (new Converter($source->url()))->page($source->html());
     }
 
     protected function notFound(): never
