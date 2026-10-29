@@ -154,6 +154,8 @@ class Markdown
 
         status_header(200);
         header('Content-Type: text/markdown; charset=utf-8');
+        // The body is decoded text, so markup quoted in a post must never be sniffed as HTML.
+        header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
         header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($permalink)));
 
@@ -193,7 +195,11 @@ class Markdown
             setup_postdata($previous);
         }
 
-        $markdown = trim((string) preg_replace("/\n{3,}/", "\n\n", $this->converter()->convert($html)));
+        // The converter leaves entities encoded, so `&amp;` would reach the reader verbatim.
+        $markdown = html_entity_decode($this->converter()->convert($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing but whitespace.
+        $markdown = (string) preg_replace('/^[\h\x{00A0}]+$/mu', '', $markdown);
+        $markdown = trim((string) preg_replace("/\n{3,}/", "\n\n", $markdown));
 
         return '# '.Format::text(get_the_title($post))."\n\n".($markdown ? $markdown."\n" : '');
     }

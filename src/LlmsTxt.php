@@ -598,8 +598,12 @@ class LlmsTxt
      * Yoast returns false for anything set to noindex, which conveniently doubles
      * as a filter -- content excluded from search should not be advertised here
      * either.
+     *
+     * Without $generated, an excerpt WordPress manufactures from the body copy is
+     * not accepted: on a block-built page it is the first few headings run
+     * together, which is tolerable as a link's gloss but not as the site summary.
      */
-    protected function description(int $postId): string
+    protected function description(int $postId, bool $generated = true): string
     {
         if (function_exists('YoastSEO')) {
             $meta = YoastSEO()->meta->for_post($postId);
@@ -613,6 +617,10 @@ class LlmsTxt
             }
         }
 
+        if (! $generated && ! has_excerpt($postId)) {
+            return '';
+        }
+
         return Format::truncate(Format::text(get_the_excerpt($postId)));
     }
 
@@ -620,7 +628,7 @@ class LlmsTxt
     {
         $frontPage = (int) get_option('page_on_front');
 
-        $summary = $frontPage > 0 ? $this->description($frontPage) : '';
+        $summary = $frontPage > 0 ? $this->description($frontPage, false) : '';
         $summary = $summary ?: Format::truncate(Format::text(get_bloginfo('description')));
 
         return (string) apply_filters('gds/llms_txt/summary', $summary);

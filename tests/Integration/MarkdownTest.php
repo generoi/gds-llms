@@ -119,6 +119,17 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('Email', $markdown);
     }
 
+    public function test_render_decodes_entities_and_drops_spacer_lines(): void
+    {
+        $post = self::factory()->post->create_and_get([
+            'post_content' => "<p>Tech &amp; design</p>\n<p>&nbsp;</p>\n<p>Co-founder &amp; CGO</p>",
+        ]);
+
+        $markdown = (new Markdown)->render($post);
+
+        $this->assertStringContainsString("Tech & design\n\nCo-founder & CGO", $markdown);
+    }
+
     public function test_render_converts_tables(): void
     {
         $post = self::factory()->post->create_and_get([

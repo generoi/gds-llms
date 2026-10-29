@@ -50,6 +50,19 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringContainsString('> Industrial pumps since 1950.', (new LlmsTxt)->build(''));
     }
 
+    /**
+     * An excerpt generated from a block-built front page is its headings run
+     * together; the tagline is a better summary than that.
+     */
+    public function test_summary_ignores_a_generated_front_page_excerpt(): void
+    {
+        $front = self::factory()->post->create(['post_type' => 'page', 'post_excerpt' => '', 'post_content' => '<h2>CLIENTS WE PARTNERED WITH</h2><p>Ready to start?</p>']);
+        update_option('show_on_front', 'page');
+        update_option('page_on_front', $front);
+
+        $this->assertStringContainsString('> We make things.', (new LlmsTxt)->build(''));
+    }
+
     public function test_intro_states_the_language_and_the_markdown_urls(): void
     {
         $body = (new LlmsTxt)->build('');
