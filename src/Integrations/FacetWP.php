@@ -50,7 +50,7 @@ class FacetWP
             $facet = FWP()->helper->get_facet_by_name($name);
             $isPager = ($facet['type'] ?? '') === 'pager';
             // A pager's label is an admin name ("pagination") no visitor sees.
-            $label = $isPager ? 'Pages' : (string) ($output['settings']['labels'][$name] ?? $name);
+            $label = $isPager ? __('Pages') : (string) ($output['settings']['labels'][$name] ?? $name);
             $links = $isPager
                 ? self::pages($base, (int) ($output['settings']['pager']['total_pages'] ?? 1))
                 : self::choices($name, (string) $facetHtml, $base);

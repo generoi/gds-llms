@@ -85,13 +85,13 @@ class Format
      */
     public static function resultCount(int $total, int $page, int $pages): string
     {
-        $text = sprintf('%d %s', $total, $total === 1 ? 'result' : 'results');
+        /* translators: %s: number of results */
+        $count = sprintf(_n('%s result', '%s results', $total, 'gds-llms'), number_format_i18n($total));
 
-        if ($pages > 1) {
-            $text .= sprintf(', page %d of %d', $page, $pages);
-        }
-
-        return $text.'.';
+        return $pages > 1
+            /* translators: 1: number of results, e.g. "64 results", 2: current page, 3: number of pages */
+            ? sprintf(__('%1$s, page %2$d of %3$d.', 'gds-llms'), $count, $page, $pages)
+            : $count.'.';
     }
 
     public static function truncate(string $value, int $length = self::MAX_DESCRIPTION): string

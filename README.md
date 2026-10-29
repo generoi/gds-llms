@@ -71,6 +71,19 @@ add_filter('gds/llms/markdown_available', fn (bool $available, mixed $object) =>
 - **Yoast SEO**: its own llms.txt is switched off, since a physical file it writes would shadow the rewrite rule.
 - **Rank Math**: where its llms.txt module is enabled, this package's llms.txt stands down entirely.
 
+## Translations
+
+Finnish and Swedish ship in `resources/lang/` (text domain `gds-llms`); a site's own `languages/plugins/gds-llms-{locale}.mo` takes precedence. Each language's llms.txt is built in that language's locale, markdown in the page's. Where core already has the string -- `Pages`, `Page not found`, list separators -- core's translation is used. The `Optional` heading and robots.txt stay English: their wording is part of the format.
+
+After changing a string:
+
+```bash
+npx wp-env run cli wp i18n make-pot wp-content/mu-plugins/gds-llms wp-content/mu-plugins/gds-llms/resources/lang/gds-llms.pot --domain=gds-llms --include=src
+# update the .po files, then
+npx wp-env run cli wp i18n make-mo wp-content/mu-plugins/gds-llms/resources/lang
+npx wp-env run cli wp i18n make-php wp-content/mu-plugins/gds-llms/resources/lang
+```
+
 ## Installation
 
 ```bash

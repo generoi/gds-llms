@@ -168,12 +168,17 @@ class Converter
                 }
             }
 
-            $note = $this->paragraph($this->strong($name ? sprintf('Form: %s', $name) : 'Form'));
-            $note->appendChild($this->doc->createTextNode(' (fill it in on '));
-            $link = $this->doc->createElement('a', 'the web page');
+            /* translators: %s: form name */
+            $note = $this->paragraph($this->strong($name ? sprintf(__('Form: %s', 'gds-llms'), $name) : __('Form', 'gds-llms')));
+            // One sentence for translators, with the link wherever their language puts it.
+            /* translators: %s: a link reading "the web page" */
+            [$before, $after] = explode('%s', __('(fill it in on %s)', 'gds-llms'), 2) + ['', ''];
+            $note->appendChild($this->doc->createTextNode(' '.$before));
+            $link = $this->doc->createElement('a');
+            $link->appendChild($this->doc->createTextNode(__('the web page', 'gds-llms')));
             $link->setAttribute('href', $this->base);
             $note->appendChild($link);
-            $note->appendChild($this->doc->createTextNode($fields ? '). Fields:' : ')'));
+            $note->appendChild($this->doc->createTextNode($after.($fields ? '. '.__('Fields:', 'gds-llms') : '')));
 
             $replacement = $this->doc->createDocumentFragment();
             $replacement->appendChild($note);
@@ -203,7 +208,8 @@ class Converter
                 $title = Format::text($iframe->getAttribute('title'));
                 $link = $this->doc->createElement('a');
                 $link->setAttribute('href', $this->absolute($src));
-                $link->appendChild($this->doc->createTextNode($title ? sprintf('Embedded: %s', $title) : 'Embedded content'));
+                /* translators: %s: title of an embedded map, video or app */
+                $link->appendChild($this->doc->createTextNode($title ? sprintf(__('Embedded: %s', 'gds-llms'), $title) : __('Embedded content', 'gds-llms')));
                 $replacement = $this->paragraph($link);
             }
 

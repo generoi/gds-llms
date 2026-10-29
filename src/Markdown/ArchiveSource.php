@@ -44,7 +44,7 @@ class ArchiveSource implements Source
         $main .= $this->list(array_map(fn (WP_Post $post) => $this->item($post), array_filter($this->query->posts, fn ($post) => $post instanceof WP_Post)));
 
         if ($pages > 1) {
-            $main .= '<p><strong>Pages</strong></p>'.$this->list(array_map(
+            $main .= '<p><strong>'.esc_html__('Pages').'</strong></p>'.$this->list(array_map(
                 fn (int $n) => sprintf('<a href="%s">%d</a>', esc_url(get_pagenum_link($n)), $n),
                 range(1, $pages),
             ));

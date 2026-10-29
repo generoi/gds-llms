@@ -33,8 +33,22 @@ class Plugin
 
         $this->booted = true;
 
+        add_filter('lang_dir_for_domain', [$this, 'languagesDir'], 10, 2);
+
         (new LlmsTxt\Endpoint)->register();
         (new Markdown\Endpoint)->register();
         (new Robots)->register();
+    }
+
+    /**
+     * The bundled translations, for WordPress' just-in-time loading -- which
+     * switch_to_locale() also goes through. An mu-plugin installed by Composer
+     * has no directory load_plugin_textdomain() can be relative to, so the
+     * path is supplied here, and only when the site has no translation of its
+     * own in languages/plugins/.
+     */
+    public function languagesDir(string|false $path, string $domain): string|false
+    {
+        return $domain === 'gds-llms' && ! $path ? dirname(__DIR__).'/resources/lang/' : $path;
     }
 }

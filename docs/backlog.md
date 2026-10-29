@@ -59,6 +59,32 @@ page a markdown version too. Cost: one normal page render.
 - medihealth product cards: card link has no accessible name.
 - hippo `gds-media-card`: link exists only in shadow DOM.
 
+## Translations (fi, sv, en)
+
+Reader-facing text is hard-coded English. Prefer core/WooCommerce strings that
+already exist; bundle `gds-llms` fi/sv for the rest, loaded per Polylang
+language (`switch_to_locale()` while building llms.txt and markdown).
+
+- [x] Core strings where one exists word for word (`Pages`, `Sitemap`,
+  `Not Found`). WooCommerce strings only for WooCommerce-only text (the
+  commerce sentence), since its textdomain is absent elsewhere. The variable
+  price range already uses `wc_format_price_range()`.
+- [x] Our own: llms.txt intro sentences (`Written in %s.`, `Also available
+  in`, the markdown-suffix sentence, `Related sites:`, Woo commerce sentence,
+  catalogue sentence), sitemap description, result count (`_n()`), `Form: %s`,
+  `Embedded: %s`, `Not found`.
+- [x] Stay English: the `Optional` heading (fixed by the llms.txt format),
+  robots.txt Content-Signal licence text, HTTP headers, exception messages,
+  bot names.
+
+## Markdown: link translations
+
+- [ ] Frontmatter `translations:` map, language → that translation's `.md`
+  URL (`pll_get_post_translations()`, language roots for archives), in both
+  modes. Today only `language` is there; page mode's hreflang `<link>`s are
+  not read, content mode's `<head>` has none. Optionally also
+  `Link: <…>; rel="alternate"; hreflang="sv"` response headers.
+
 ## Will not convert (JS- or third-party-rendered)
 
 HubSpot/Cognito/Leadoo forms, Gravity Forms (removed by design), hippo

@@ -1,0 +1,117 @@
+# Copyright (C) 2026 Genero
+# This file is distributed under the MIT.
+msgid ""
+msgstr ""
+"Project-Id-Version: GDS LLMs 0.1.0\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: fi\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"X-Domain: gds-llms\n"
+
+#. translators: %s: number of results
+#: src/Format.php:89
+#, php-format
+msgid "%s result"
+msgid_plural "%s results"
+msgstr[0] "%s tulos"
+msgstr[1] "%s tulosta"
+
+#. translators: 1: number of results, e.g. "64 results", 2: current page, 3: number of pages
+#: src/Format.php:93
+#, php-format
+msgid "%1$s, page %2$d of %3$d."
+msgstr "%1$s, sivu %2$d/%3$d."
+
+#. translators: %s: currency code, e.g. EUR
+#: src/Integrations/WooCommerce.php:23
+#, php-format
+msgid "Products can be bought online. Prices are in %s and include VAT."
+msgstr "Tuotteita voi ostaa verkossa. Hinnat ovat valuutassa %s ja sisältävät arvonlisäveron."
+
+#. translators: %s: currency code, e.g. EUR
+#: src/Integrations/WooCommerce.php:25
+#, php-format
+msgid "Products can be bought online. Prices are in %s and exclude VAT."
+msgstr "Tuotteita voi ostaa verkossa. Hinnat ovat valuutassa %s ilman arvonlisäveroa."
+
+#. translators: 1: number of products, 2: list of category links
+#: src/LlmsTxt/Catalogue.php:114
+#, php-format
+msgid "The %1$s product is organised under %2$s."
+msgid_plural "The %1$s products are organised under %2$s."
+msgstr[0] "%1$s tuote on jaoteltu luokkiin %2$s."
+msgstr[1] "%1$s tuotetta on jaoteltu luokkiin %2$s."
+
+#. translators: %s: language name
+#: src/LlmsTxt/Document.php:226
+#, php-format
+msgid "Written in %s."
+msgstr "Kieli: %s."
+
+#. translators: %s: list of language links
+#: src/LlmsTxt/Document.php:257
+#, php-format
+msgid "Also available in %s."
+msgstr "Saatavilla myös kielillä %s."
+
+#. translators: %s: URL suffix, e.g. `index.html.md`
+#: src/LlmsTxt/Document.php:270
+#, php-format
+msgid "Every page is also available as markdown at its URL followed by `%s`."
+msgstr "Jokainen sivu on saatavilla myös markdown-muodossa, kun sivun osoitteeseen lisätään `%s`."
+
+#. translators: 1: site link, 2: language name
+#: src/LlmsTxt/Document.php:309
+#, php-format
+msgid "%1$s in %2$s"
+msgstr "%1$s (%2$s)"
+
+#. translators: %s: list of site links
+#: src/LlmsTxt/Document.php:313
+#, php-format
+msgid "Related sites: %s."
+msgstr "Muut sivustot: %s."
+
+#: src/LlmsTxt/Document.php:328
+msgid "Sitemap"
+msgstr "Sivukartta"
+
+#: src/LlmsTxt/Document.php:328
+msgid "Every indexable URL, split by content type."
+msgstr "Kaikki indeksoitavat osoitteet sisältötyypeittäin."
+
+#. translators: %s: form name
+#: src/Markdown/Converter.php:172
+#, php-format
+msgid "Form: %s"
+msgstr "Lomake: %s"
+
+#: src/Markdown/Converter.php:172
+msgid "Form"
+msgstr "Lomake"
+
+#. translators: %s: a link reading "the web page"
+#: src/Markdown/Converter.php:175
+#, php-format
+msgid "(fill it in on %s)"
+msgstr "(täytä se %s)"
+
+#: src/Markdown/Converter.php:178
+msgid "the web page"
+msgstr "verkkosivulla"
+
+#: src/Markdown/Converter.php:181
+msgid "Fields:"
+msgstr "Kentät:"
+
+#. translators: %s: title of an embedded map, video or app
+#: src/Markdown/Converter.php:212
+#, php-format
+msgid "Embedded: %s"
+msgstr "Upotettu: %s"
+
+#: src/Markdown/Converter.php:212
+msgid "Embedded content"
+msgstr "Upotettu sisältö"
