@@ -13,6 +13,7 @@ parameters:
     ignoreErrors:
         # sage-cachetags is optional and only touched behind class_exists();
         # requiring it for analysis would pull all of Acorn into dev.
-        - message: '#Genero\\Sage\\CacheTags#'
+        # Messages quoting a class name as a string double its backslashes.
+        - message: '#Genero\\{1,2}Sage\\{1,2}CacheTags#'
         # The Yoast stubs type YoastSEO() as an unqualified `Main`, which does not resolve.
         - message: '#unknown class Main\.#'

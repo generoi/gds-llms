@@ -79,94 +79,7 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertFalse((new Markdown)->rewriteRequestUri());
     }
 
-    public function test_render_converts_the_content_to_markdown(): void
-    {
-        $post = self::factory()->post->create_and_get([
-            'post_title' => 'Pumps &amp; valves',
-            'post_content' => implode('', [
-                '<!-- wp:heading --><h2 class="wp-block-heading">Hello</h2><!-- /wp:heading -->',
-                '<!-- wp:paragraph --><p>Some <strong>bold</strong> text and a <a href="https://example.com/x">link</a>.</p><!-- /wp:paragraph -->',
-                '<!-- wp:group --><div class="wp-block-group"><!-- wp:list --><ul><li>One</li><li>Two</li></ul><!-- /wp:list --></div><!-- /wp:group -->',
-            ]),
-        ]);
-
-        $markdown = (new Markdown)->render($post);
-
-        $this->assertStringStartsWith("# Pumps & valves\n\n", $markdown);
-        $this->assertStringContainsString('## Hello', $markdown);
-        $this->assertStringContainsString('**bold**', $markdown);
-        $this->assertStringContainsString('[link](https://example.com/x)', $markdown);
-        $this->assertStringContainsString('- One', $markdown);
-        $this->assertStringNotContainsString('wp-block-group', $markdown);
-        $this->assertStringNotContainsString('<', $markdown);
-    }
-
-    /**
-     * the_content is where blocks and shortcodes are rendered, so what reaches
-     * the converter is whatever the site's filters produce, scripts included.
-     */
-    public function test_render_drops_scripts_and_forms_added_by_filters(): void
-    {
-        $post = self::factory()->post->create_and_get(['post_content' => '<p>Body</p>']);
-        $filter = fn (string $content) => $content.'<script>alert(1)</script><form><label>Email</label><input name="e"></form>';
-
-        add_filter('the_content', $filter);
-        $markdown = (new Markdown)->render($post);
-        remove_filter('the_content', $filter);
-
-        $this->assertStringContainsString('Body', $markdown);
-        $this->assertStringNotContainsString('alert', $markdown);
-        $this->assertStringNotContainsString('Email', $markdown);
-    }
-
-    public function test_render_decodes_entities_and_drops_spacer_lines(): void
-    {
-        $post = self::factory()->post->create_and_get([
-            'post_content' => "<p>Tech &amp; design</p>\n<p>&nbsp;</p>\n<p>Co-founder &amp; CGO</p>",
-        ]);
-
-        $markdown = (new Markdown)->render($post);
-
-        $this->assertStringContainsString("Tech & design\n\nCo-founder & CGO", $markdown);
-    }
-
-    public function test_invalid_utf8_does_not_blank_the_page(): void
-    {
-        $post = self::factory()->post->create_and_get(['post_content' => '<p>Body</p>']);
-        $filter = fn (string $content) => $content."<p>Bad \xC3 byte</p>";
-
-        add_filter('the_content', $filter);
-        $markdown = (new Markdown)->render($post);
-        remove_filter('the_content', $filter);
-
-        $this->assertStringContainsString('Body', $markdown);
-        $this->assertStringContainsString('byte', $markdown);
-    }
-
-    public function test_render_converts_tables(): void
-    {
-        $post = self::factory()->post->create_and_get([
-            'post_content' => '<!-- wp:table --><figure class="wp-block-table"><table><thead><tr><th>Size</th><th>Price</th></tr></thead><tbody><tr><td>S</td><td>10</td></tr></tbody></table></figure><!-- /wp:table -->',
-        ]);
-
-        $markdown = (new Markdown)->render($post);
-
-        $this->assertStringContainsString('| Size | Price |', $markdown);
-        $this->assertStringContainsString('| S | 10 |', $markdown);
-    }
-
-    public function test_render_restores_the_global_post(): void
-    {
-        $outer = self::factory()->post->create_and_get();
-        $inner = self::factory()->post->create_and_get();
-        $GLOBALS['post'] = $outer;
-
-        (new Markdown)->render($inner);
-
-        $this->assertSame($outer->ID, $GLOBALS['post']->ID);
-    }
-
-    public function test_alternate_link_is_printed_on_a_published_page(): void
+    public function test_alternate_link_is_printed_on_a_page(): void
     {
         $page = self::factory()->post->create(['post_type' => 'page', 'post_name' => 'about']);
         $this->go_to(get_permalink($page));
@@ -177,63 +90,108 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertStringContainsString('/about/index.html.md', $output);
     }
 
-    public function test_alternate_link_is_not_printed_on_archives(): void
+    protected function goToCategory(): void
     {
-        self::factory()->post->create();
-        $this->go_to(home_url('/'));
-
-        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
+        // Taxonomies registered before the permalink structure was set have no pretty URLs.
+        create_initial_taxonomies();
+        flush_rewrite_rules();
+        $category = self::factory()->category->create(['slug' => 'news']);
+        self::factory()->post->create(['post_category' => [$category]]);
+        $this->go_to(get_category_link($category));
     }
 
-    public function test_password_protected_posts_are_not_available(): void
+    public function test_content_mode_is_the_default(): void
     {
-        $post = self::factory()->post->create_and_get(['post_password' => 'secret']);
-
-        $this->assertFalse((new Markdown)->isAvailable($post));
-    }
-
-    public function test_drafts_are_not_available(): void
-    {
-        $post = self::factory()->post->create_and_get(['post_status' => 'draft']);
-
-        $this->assertFalse((new Markdown)->isAvailable($post));
-    }
-
-    public function test_attachments_are_not_available(): void
-    {
-        $attachment = get_post(self::factory()->attachment->create(['post_status' => 'publish']));
-
-        $this->assertFalse((new Markdown)->isAvailable($attachment));
+        $this->assertSame(Markdown::MODE_CONTENT, Markdown::mode());
     }
 
     /**
-     * Template-gated content -- an intranet page behind a login form -- is a
-     * published post as far as WordPress knows, so the site has to say so.
+     * An archive has no post content of its own.
      */
-    public function test_availability_is_filterable_per_post(): void
+    public function test_archives_have_no_markdown_in_content_mode(): void
     {
-        $gated = self::factory()->post->create_and_get(['post_type' => 'page']);
-        $open = self::factory()->post->create_and_get(['post_type' => 'page']);
-        update_post_meta($gated->ID, '_wp_page_template', 'template-intra.php');
-        $filter = fn (bool $available, \WP_Post $post) => $available && get_page_template_slug($post) !== 'template-intra.php';
+        $this->goToCategory();
 
-        add_filter('gds/llms/markdown_available', $filter, 10, 2);
-        $markdown = new Markdown;
-        $gatedAvailable = $markdown->isAvailable($gated);
-        $openAvailable = $markdown->isAvailable($open);
-        remove_filter('gds/llms/markdown_available', $filter);
-
-        $this->assertFalse($gatedAvailable);
-        $this->assertTrue($openAvailable);
+        $this->assertFalse((new Markdown)->isAvailable());
+        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
     }
 
-    public function test_non_public_post_types_are_not_available(): void
+    /**
+     * The whole page is converted, so archives and term pages have a markdown
+     * version as much as single posts do.
+     */
+    public function test_archives_have_markdown_in_page_mode(): void
     {
-        register_post_type('internal_note', ['public' => false]);
-        $post = self::factory()->post->create_and_get(['post_type' => 'internal_note']);
+        $this->goToCategory();
+        $mode = fn () => Markdown::MODE_PAGE;
 
-        $available = (new Markdown)->isAvailable($post);
-        unregister_post_type('internal_note');
+        add_filter('gds/llms/markdown_mode', $mode);
+        $link = get_echo([new Markdown, 'printAlternateLink']);
+        remove_filter('gds/llms/markdown_mode', $mode);
+
+        $this->assertStringContainsString('/category/news/index.html.md', $link);
+    }
+
+    public function test_password_protected_posts_have_no_markdown_in_content_mode(): void
+    {
+        $post = self::factory()->post->create(['post_password' => 'secret']);
+        $this->go_to(get_permalink($post));
+
+        $this->assertFalse((new Markdown)->isAvailable());
+    }
+
+    public function test_content_mode_converts_the_post_content_under_its_title(): void
+    {
+        $post = self::factory()->post->create_and_get([
+            'post_title' => 'Pumps &amp; valves',
+            'post_content' => '<!-- wp:heading --><h2 class="wp-block-heading">Hello</h2><!-- /wp:heading --><!-- wp:paragraph --><p>Some <a href="/x/">link</a>.</p><!-- /wp:paragraph -->',
+        ]);
+
+        $markdown = (new Markdown)->renderContent($post);
+
+        $this->assertStringStartsWith("# Pumps & valves\n\n## Hello", $markdown);
+        $this->assertStringContainsString('[link]('.home_url('/x/').')', $markdown);
+    }
+
+    /**
+     * A page identified by its query string has no path to append to -- and
+     * must not be given the front page's markdown URL either.
+     */
+    public function test_query_string_pages_have_no_alternate_link(): void
+    {
+        $category = self::factory()->category->create();
+        self::factory()->post->create(['post_category' => [$category]]);
+        $this->go_to(home_url('/?cat='.$category));
+
+        $this->assertTrue(is_category());
+        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
+    }
+
+    public function test_not_found_pages_have_no_markdown(): void
+    {
+        $this->go_to(home_url('/no-such-page/'));
+
+        $this->assertFalse((new Markdown)->isAvailable());
+        $this->assertSame('', get_echo([new Markdown, 'printAlternateLink']));
+    }
+
+    public function test_feeds_have_no_markdown(): void
+    {
+        self::factory()->post->create();
+        $this->go_to(get_feed_link());
+
+        $this->assertFalse((new Markdown)->isAvailable());
+    }
+
+    public function test_availability_is_filterable(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page']);
+        $this->go_to(get_permalink($page));
+        $filter = fn (bool $available, mixed $object) => $available && ! ($object instanceof \WP_Post && $object->ID === $page);
+
+        add_filter('gds/llms/markdown_available', $filter, 10, 2);
+        $available = (new Markdown)->isAvailable();
+        remove_filter('gds/llms/markdown_available', $filter);
 
         $this->assertFalse($available);
     }

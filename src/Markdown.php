@@ -3,12 +3,10 @@
 namespace GeneroWP\Llms;
 
 use Genero\Sage\CacheTags\Tags\CoreTags;
-use League\HTMLToMarkdown\Converter\TableConverter;
-use League\HTMLToMarkdown\HtmlConverter;
 use WP_Post;
 
 /**
- * A markdown version of every singular page, at the URL the llms.txt proposal
+ * A markdown version of every page, at the URL the llms.txt proposal
  * specifies: the page URL with `.md` appended, or `index.html.md` when the URL
  * ends in a slash.
  *
@@ -18,38 +16,58 @@ use WP_Post;
  * underneath the page's own path, so a host cache that purges a page as a prefix
  * (Kinsta's "group" purge does) clears the markdown along with it.
  *
- * Only the post content is converted, not the rendered template: navigation,
- * footer and cookie banners are the same on every page and are what llms.txt is
- * for. Content a block draws with JavaScript -- maps, iframes, carousels fed by
- * an API -- has no text to convert and is simply absent.
+ * Two ways to produce it, chosen per site with `gds/llms/markdown_mode`:
+ *
+ * - `content` (default): the post content of a singular page, rendered on its
+ *   own. About two thirds the cost of the page; archives have no markdown.
+ * - `page`: the whole page rendered as the visitor would see it, its `<main>`
+ *   converted. Costs what the page costs, but includes what templates draw from
+ *   post meta (recipe ingredients, product prices) and covers archives.
+ *
+ * Both answer last on template_redirect, so a login wall that redirects there
+ * stops the markdown as it stops the page. A template that hides content
+ * behind a login form only does so in `page` mode.
  */
 class Markdown
 {
     public const SUFFIX = 'index.html.md';
 
+    public const MODE_CONTENT = 'content';
+
+    public const MODE_PAGE = 'page';
+
     protected bool $requested = false;
+
+    protected string $buffer = '';
 
     public function register(): void
     {
         $this->requested = $this->rewriteRequestUri();
 
-        add_action('wp_head', [$this, 'printAlternateLink']);
-        add_action('template_redirect', [$this, 'sendAlternateHeader']);
-        add_action('template_redirect', [$this, 'maybeSend'], 0);
+        if ($this->requested) {
+            // `/about.md` is rewritten to `/about`, which canonical redirect
+            // would bounce to `/about/` -- the HTML page.
+            add_filter('redirect_canonical', '__return_false');
+            // Last, so every gate on template_redirect has had its say.
+            add_action('template_redirect', [$this, 'start'], PHP_INT_MAX);
+        } else {
+            add_action('wp_head', [$this, 'printAlternateLink']);
+            add_action('template_redirect', [$this, 'sendAlternateHeader']);
+        }
     }
 
     /**
-     * The markdown URL for a permalink, or '' where there is none to give.
+     * The markdown URL for a page URL, or '' where there is none to give.
      *
-     * Plain `?p=123` permalinks have no path to append to.
+     * A query string has no path to append to.
      */
-    public static function url(string|false $permalink): string
+    public static function url(string|false $url): string
     {
-        if (! $permalink || str_contains($permalink, '?')) {
+        if (! $url || str_contains($url, '?')) {
             return '';
         }
 
-        return str_ends_with($permalink, '/') ? $permalink.self::SUFFIX : $permalink.'.md';
+        return str_ends_with($url, '/') ? $url.self::SUFFIX : $url.'.md';
     }
 
     /**
@@ -122,103 +140,150 @@ class Markdown
      */
     public function alternateUrl(): string
     {
-        $post = get_queried_object();
-
-        if ($this->requested || ! is_singular() || ! $post instanceof WP_Post || ! $this->isAvailable($post)) {
-            return '';
-        }
-
-        return self::url(get_permalink($post));
+        return $this->isAvailable() ? self::url($this->pageUrl()) : '';
     }
 
     /**
-     * Priority 0 so this answers before redirect_canonical (10), which would
-     * otherwise bounce `/about.md`'s rewritten `/about` to `/about/`.
+     * The URL of the page being viewed.
+     *
+     * The query string stays: on `?cat=2` or `?s=pumps` it is what identifies
+     * the page, and url() gives such a page no markdown URL rather than the
+     * front page's.
      */
-    public function maybeSend(): void
+    public function pageUrl(): string
     {
-        if (! $this->requested) {
-            return;
+        global $wp;
+
+        $url = user_trailingslashit(home_url($wp->request));
+        $query = (string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? ''), PHP_URL_QUERY);
+
+        return $query === '' ? $url : $url.'?'.$query;
+    }
+
+    public static function mode(): string
+    {
+        /**
+         * How the markdown is produced: `content` or `page` (see the class docblock).
+         */
+        return apply_filters('gds/llms/markdown_mode', self::MODE_CONTENT) === self::MODE_PAGE ? self::MODE_PAGE : self::MODE_CONTENT;
+    }
+
+    public function isAvailable(): bool
+    {
+        $object = get_queried_object();
+        $available = ! is_404() && ! is_feed() && ! is_robots() && ! is_favicon() && ! is_embed() && ! is_trackback();
+
+        // Only a singular page has post content of its own to convert.
+        if (self::mode() === self::MODE_CONTENT) {
+            $available = $available && is_singular() && $object instanceof WP_Post && ! post_password_required($object);
         }
 
-        $post = get_queried_object();
+        /**
+         * Whether the page being viewed has a markdown version.
+         *
+         * In `content` mode the markdown skips the template, so content a
+         * template hides -- an intranet page behind a login form -- is served
+         * unless the site returns false here, or switches to `page` mode.
+         *
+         * @param  bool  $available
+         * @param  mixed  $object  the queried object
+         */
+        return (bool) apply_filters('gds/llms/markdown_available', $available, $object);
+    }
 
-        if (! is_singular() || ! $post instanceof WP_Post || ! $this->isAvailable($post)) {
+    public function start(): void
+    {
+        if (! $this->isAvailable()) {
             status_header(404);
             header('Content-Type: text/plain; charset=utf-8');
             echo "Not found\n";
             exit;
         }
 
-        $permalink = (string) get_permalink($post);
+        if (self::mode() === self::MODE_CONTENT) {
+            $post = get_queried_object();
+            if (! $post instanceof WP_Post) {
+                throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
+            }
 
-        status_header(200);
-        header('Content-Type: text/markdown; charset=utf-8');
-        // The body is decoded text, so markup quoted in a post must never be sniffed as HTML.
-        header('X-Content-Type-Options: nosniff');
-        header('X-Robots-Tag: noindex');
-        header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($permalink)));
-
-        CacheTags::send(fn () => CoreTags::posts([$post]), self::url($permalink));
-
-        echo $this->render($post);
-        exit;
-    }
-
-    public function isAvailable(WP_Post $post): bool
-    {
-        $available = $post->post_status === 'publish'
-            && ! post_password_required($post)
-            && $post->post_type !== 'attachment'
-            && is_post_type_viewable($post->post_type);
-
-        /**
-         * Whether a post has a markdown version.
-         *
-         * The markdown is the post content, rendered outside the theme, so any
-         * content a template hides -- behind a login form on an intranet page,
-         * say -- is served here in full unless the site returns false for it.
-         */
-        return (bool) apply_filters('gds/llms/markdown_available', $available, $post);
-    }
-
-    public function render(WP_Post $post): string
-    {
-        $previous = $GLOBALS['post'] ?? null;
-        $GLOBALS['post'] = $post;
-        setup_postdata($post);
-
-        $html = (string) apply_filters('the_content', get_the_content(null, false, $post));
-
-        $GLOBALS['post'] = $previous;
-        if ($previous instanceof WP_Post) {
-            setup_postdata($previous);
+            $this->sendHeaders();
+            CacheTags::send(fn () => CoreTags::posts([$post]), self::url($this->pageUrl()));
+            echo $this->renderContent($post);
+            exit;
         }
 
-        // DOMDocument silently drops a whole element containing an invalid byte sequence.
-        $html = wp_check_invalid_utf8($html, true);
-        // The converter leaves entities encoded, so `&amp;` would reach the reader verbatim.
-        $markdown = html_entity_decode($this->converter()->convert($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        // Spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing but whitespace.
-        $markdown = Format::replace('/^[\h\x{00A0}]+$/mu', '', $markdown);
-        $markdown = trim(Format::replace("/\n{3,}/", "\n\n", $markdown));
-
-        return '# '.Format::text(get_the_title($post))."\n\n".($markdown ? $markdown."\n" : '');
+        // A handler rather than collecting the buffer on shutdown: Acorn sends
+        // its response through Symfony, which closes every output buffer itself
+        // before shutdown. The handler runs whoever closes it, before anything
+        // reaches the client.
+        ob_start([$this, 'handleBuffer']);
     }
 
-    protected function converter(): HtmlConverter
+    /**
+     * Swap the rendered page for its markdown once the buffer closes.
+     */
+    public function handleBuffer(string $chunk, int $phase): string
     {
-        $converter = new HtmlConverter([
-            'header_style' => 'atx',
-            'hard_break' => true,
-            // Layout wrappers (div, figure, section) dissolve into their text.
-            'strip_tags' => true,
-            'strip_placeholder_links' => true,
-            // Nothing in these reads as content once it is out of a browser.
-            'remove_nodes' => 'script style noscript template svg form button iframe',
-        ]);
-        $converter->getEnvironment()->addConverter(new TableConverter);
+        $this->buffer .= $chunk;
 
-        return $converter;
+        // An early flush() mid-render only hands over part of the page.
+        if (! ($phase & PHP_OUTPUT_HANDLER_FINAL)) {
+            return '';
+        }
+
+        // A redirect from inside the template, or a template that answered
+        // with something other than a page: pass it through untouched.
+        if (! $this->isHtmlResponse()) {
+            return $this->buffer;
+        }
+
+        $this->sendHeaders();
+        CacheTags::saveUrl(self::url($this->pageUrl()));
+
+        return (new Converter($this->pageUrl()))->page($this->buffer);
+    }
+
+    /**
+     * The post content, converted as if it were a page's main content titled
+     * with the post title.
+     */
+    public function renderContent(WP_Post $post): string
+    {
+        setup_postdata($post);
+        $content = (string) apply_filters('the_content', get_the_content(null, false, $post));
+
+        $html = sprintf(
+            '<html><head><title>%s</title></head><body><main>%s</main></body></html>',
+            esc_html(get_the_title($post)),
+            $content
+        );
+
+        return (new Converter((string) get_permalink($post)))->page($html);
+    }
+
+    protected function sendHeaders(): void
+    {
+        status_header(200);
+        header('Content-Type: text/markdown; charset=utf-8');
+        // The body is decoded text, so markup quoted in a page must never be sniffed as HTML.
+        header('X-Content-Type-Options: nosniff');
+        header('X-Robots-Tag: noindex');
+        header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($this->pageUrl())));
+    }
+
+    protected function isHtmlResponse(): bool
+    {
+        $status = http_response_code();
+        if (is_int($status) && $status >= 300 && $status < 400) {
+            return false;
+        }
+
+        foreach (headers_list() as $header) {
+            if (stripos($header, 'content-type:') === 0) {
+                return stripos($header, 'text/html') !== false;
+            }
+        }
+
+        return true;
     }
 }

@@ -6,11 +6,16 @@ Serves `/llms.txt` and a markdown version of every page for language models. An 
 
 **`/llms.txt`** follows the [llms.txt proposal](https://llmstxt.org/): the site name, a one-line summary, and a short orientation, then the site's own menus as sections. Every menu assigned to a location is listed once, the primary navigation first. Menu items that link to `#` become headings with everything beneath them as links; the primary menu's other top-level links go in the header, other menus' under the menu's name. A webshop's top-level product categories follow, then a link to the sitemap. With Polylang each language has its own file (`/fi/llms.txt`) built from that language's menus. The body is cached in a transient and rebuilt when posts, terms or menus change.
 
-**Markdown pages** are served at the URL the proposal specifies: the permalink followed by `index.html.md` (`/about/` → `/about/index.html.md`), or `.md` where permalinks have no trailing slash. Only the post content is converted, not the theme around it. HTML pages advertise their markdown version with a `<link rel="alternate" type="text/markdown">` tag and a matching `Link` header.
+**Markdown pages** are served at the URL the proposal specifies: the page URL followed by `index.html.md` (`/about/` → `/about/index.html.md`), or `.md` where permalinks have no trailing slash. HTML pages advertise their markdown version with a `<link rel="alternate" type="text/markdown">` tag and a matching `Link` header. Two modes, set with `gds/llms/markdown_mode`:
+
+- **`content`** (default): the post content of a singular page, about two thirds the cost of rendering the page. Archives have no markdown version, and anything a template draws itself -- recipe ingredients from post meta, WooCommerce prices -- is missing.
+- **`page`**: the whole page rendered as a visitor sees it, its `<main>` converted. Costs what the page costs, and includes template content and archives.
+
+Either way the markdown is answered after every `template_redirect` hook, so a login wall that redirects there stops it as it stops the page. Conversion follows screen-reader semantics: `aria-hidden` content and `alt=""` images are dropped, accordion questions and tab names kept, forms described by their field labels, iframes turned into links.
 
 Both responses carry `X-Robots-Tag: noindex`. With [sage-cachetags](https://github.com/generoi/sage-cachetags) installed they also carry surrogate keys, so the CDN is purged when the content changes; without it they are cached like any other page.
 
-Content that a block draws with JavaScript (maps, iframes, API-fed carousels) has no HTML to convert, so it is missing from the markdown.
+Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carousels) has no HTML to convert, so it is missing from the markdown.
 
 ## Filters
 
@@ -20,7 +25,8 @@ Content that a block draws with JavaScript (maps, iframes, API-fed carousels) ha
 | `gds/llms_txt/taxonomies` | `['product_cat']` | Add a site's own product taxonomy. |
 | `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences keyed `language`, `translations`, `markdown`, `commerce`, `catalogue`, `network`), `links` (header links) and `sections` (`heading`, `lines`). |
 | `gds/llms_txt/network` | `false` | On a multisite, return `true` to link the network's other sites ("Related sites: …"), for sister sites a reader should know about. |
-| `gds/llms/markdown_available` | published, viewable, not password-protected | Return `false` for content the theme hides behind a login. |
+| `gds/llms/markdown_mode` | `content` | `page` for sites whose templates draw content from post meta, or gate content behind a login form in the template. |
+| `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |
 
 ```php
 // What the business does, which nothing on the site states in one sentence.
@@ -33,12 +39,13 @@ add_filter('gds/llms_txt/document', function (array $document) {
 // Sister magazines on one network, worth pointing a reader at.
 add_filter('gds/llms_txt/network', '__return_true');
 
-// Intranet pages are gated by their template, not by WordPress.
-add_filter('gds/llms/markdown_available', fn (bool $available, WP_Post $post) => $available
-    && get_page_template_slug($post) !== 'template-intra.php', 10, 2);
-```
+// Recipes whose ingredients the template renders from post meta.
+add_filter('gds/llms/markdown_mode', fn () => 'page');
 
-The markdown is the post content rendered outside the theme, so anything a template hides from logged-out visitors is served in full unless the site excludes it.
+// Or, staying in content mode: intranet pages are gated by their template.
+add_filter('gds/llms/markdown_available', fn (bool $available, mixed $object) => $available
+    && ! ($object instanceof WP_Post && get_page_template_slug($object) === 'template-intra.php'), 10, 2);
+```
 
 ## Coexistence
 

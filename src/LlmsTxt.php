@@ -177,7 +177,7 @@ class LlmsTxt
             array_map([CoreTags::class, 'navigation'], array_keys($this->menus())),
             // The only two of OPTIONS sage-cachetags purges by tag; the rest are
             // rare enough to leave to the CDN's own expiry or a deploy's flush.
-            CoreTags::option(['blogname', 'blogdescription']),
+            CacheTags::options(['blogname', 'blogdescription']),
         ], $this->url($language));
 
         echo $response['body'];
