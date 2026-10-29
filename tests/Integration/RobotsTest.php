@@ -21,17 +21,15 @@ class RobotsTest extends WP_UnitTestCase
     }
 
     /**
-     * Both drafts define these as group rules, read by crawlers without a
-     * group of their own.
+     * Both drafts define these as group rules. A `*` group of their own, which
+     * crawlers merge with the site's, leaves the site's rules untouched.
      */
-    public function test_signals_are_added_to_the_wildcard_group(): void
+    public function test_signals_get_a_wildcard_group_of_their_own(): void
     {
         $robots = $this->robots();
 
-        $this->assertStringContainsString(
-            "User-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nContent-Usage: train-ai=y, ai-use=y, search=y\nDisallow: /wp/wp-admin/\n",
-            $robots
-        );
+        $this->assertStringContainsString("User-agent: *\nDisallow: /wp/wp-admin/\n", $robots);
+        $this->assertStringEndsWith("\n\nUser-agent: *\nContent-Signal: search=yes, ai-input=yes, ai-train=yes\nContent-Usage: train-ai=y, ai-use=y, search=y\n", $robots);
         $this->assertStringContainsString('ARTICLE 4 OF THE EUROPEAN UNION DIRECTIVE 2019/790', $robots);
     }
 
@@ -71,14 +69,6 @@ class RobotsTest extends WP_UnitTestCase
         remove_filter('robots_txt', $theme);
         remove_filter('gds/llms/ai_policy', $policy);
 
-        $this->assertLessThan(strpos($robots, 'User-agent: GPTBot'), strpos($robots, 'Disallow: /wp-content/'));
-    }
-
-    public function test_a_wildcard_group_is_created_when_there_is_none(): void
-    {
-        update_option('blog_public', '1');
-        $robots = (string) apply_filters('robots_txt', "User-agent: Googlebot\nDisallow: /x/\n", '1');
-
-        $this->assertMatchesRegularExpression('/User-agent: \*\nContent-Signal: [^\n]+\nContent-Usage: [^\n]+\n\nUser-agent: Googlebot/', $robots);
+        $this->assertLessThan(strpos($robots, 'Content-Signal:'), strpos($robots, 'Disallow: /wp-content/'));
     }
 }

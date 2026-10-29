@@ -48,7 +48,7 @@ class Robots
     public function register(): void
     {
         // Last, after themes that append rules to what they assume is the
-        // final `User-agent: *` group: the groups added here go after theirs.
+        // site's own `User-agent: *` group: the groups added here go after theirs.
         add_filter('robots_txt', [$this, 'filter'], PHP_INT_MAX);
     }
 
@@ -103,14 +103,14 @@ class Robots
 
     public function filter(string $output): string
     {
-        $lines = sprintf("Content-Signal: %s\nContent-Usage: %s\n", self::contentSignal(), self::contentUsage());
-
-        // Both drafts make these group rules, so they belong in the `*` group
-        // every crawler without a group of its own reads.
-        $wildcard = '/^User-agent:[ \t]*\*[ \t]*\r?\n/mi';
-        $output = preg_match($wildcard, $output) === 1
-            ? Format::replace($wildcard, '$0'.$lines, $output)
-            : "User-agent: *\n".$lines."\n".$output;
+        // Both drafts make these group rules. A group of their own rather than
+        // lines spliced into the site's: crawlers merge every group naming the
+        // same user agent (RFC 9309, 2.2.1), so the `*` rules still apply.
+        $output = rtrim($output)."\n\n".sprintf(
+            "User-agent: *\nContent-Signal: %s\nContent-Usage: %s\n",
+            self::contentSignal(),
+            self::contentUsage()
+        );
 
         $policy = self::policy();
         $blocked = array_merge(
@@ -119,7 +119,7 @@ class Robots
         );
 
         if ($blocked) {
-            $output = rtrim($output)."\n\n# Uses of this site's content the owner declines (see Content-Signal above).\n";
+            $output .= "\n# Uses of this site's content the owner declines (see Content-Signal above).\n";
             foreach ($blocked as $crawler) {
                 $output .= "User-agent: $crawler\n";
             }
