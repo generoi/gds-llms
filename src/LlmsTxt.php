@@ -27,7 +27,8 @@ use WP_Term;
  * question, so anything countable is left to the sitemap it links.
  *
  * @phpstan-type Section array{heading: string, lines: string[]}
- * @phpstan-type Document array{title: string, summary: string, intro: string[], links: string[], sections: Section[]}
+ * @phpstan-type Link array{title: string, url: string, description: string}
+ * @phpstan-type Document array{title: string, summary: string, intro: array<string, string>, links: string[], sections: Section[]}
  */
 class LlmsTxt
 {
@@ -180,8 +181,10 @@ class LlmsTxt
     {
         /**
          * The whole document before it is rendered, for anything a site needs
-         * to say that cannot be derived: what the business does (prepend to
-         * `intro`), a section renamed, reordered, added or dropped.
+         * to say that cannot be derived: what the business does (prepend an
+         * `about` entry to `intro`), an intro sentence dropped by its key
+         * (`language`, `translations`, `markdown`, `commerce`, `catalogue`,
+         * `network`), a section renamed, reordered, added or dropped.
          *
          * @param  Document  $document
          * @param  string  $language  Polylang slug, or '' without Polylang.
@@ -196,10 +199,11 @@ class LlmsTxt
      */
     public function document(string $language): array
     {
+        $summary = $this->summary();
         $links = [];
         $sections = [];
 
-        foreach ($this->menuSections() as $index => [$loose, $groups]) {
+        foreach ($this->menuSections($summary) as $index => [$loose, $groups]) {
             // The first menu's loose links go in the header rather than under an
             // invented heading: llms.txt allows free markdown between the summary
             // and the first `##`, and a heading made up for them would be
@@ -215,7 +219,7 @@ class LlmsTxt
 
         return [
             'title' => Format::text(get_bloginfo('name')),
-            'summary' => $this->summary(),
+            'summary' => $summary,
             'intro' => $this->intro($language),
             'links' => $links,
             'sections' => array_merge($sections, $this->catalogueSections($language), $this->optionalSections()),
@@ -253,23 +257,24 @@ class LlmsTxt
     }
 
     /**
-     * How to read the rest of the document, one sentence per entry.
+     * How to read the rest of the document, one sentence per entry, keyed so a
+     * site can drop one.
      *
      * Everything here is derived from what is actually configured rather than
      * described by hand, so it cannot quietly become untrue as the site changes.
      *
-     * @return string[]
+     * @return array<string, string>
      */
     protected function intro(string $language): array
     {
-        return array_values(array_filter([
-            sprintf('Written in %s.', $this->languageName($language)),
-            $this->translationsSentence($language),
-            $this->markdownSentence(),
-            $this->commerceSentence(),
-            $this->catalogueSentence(),
-            $this->networkSentence(),
-        ]));
+        return array_filter([
+            'language' => sprintf('Written in %s.', $this->languageName($language)),
+            'translations' => $this->translationsSentence($language),
+            'markdown' => $this->markdownSentence(),
+            'commerce' => $this->commerceSentence(),
+            'catalogue' => $this->catalogueSentence(),
+            'network' => $this->networkSentence(),
+        ]);
     }
 
     /**
@@ -448,87 +453,125 @@ class LlmsTxt
     }
 
     /**
-     * Each menu as its loose links plus one section per group.
+     * Each menu as its loose links plus one section per dropdown.
      *
-     * Groups are top-level items pointing at `#` -- how a menu gives a dropdown
-     * or a footer column a heading without a page behind it -- so they become
-     * headings, and everything beneath them, at any depth, the links under that
-     * heading. Loose links are filed under the menu's own name, which is what the
-     * client called it.
+     * A top-level item with children -- a dropdown, a mega menu column, a footer
+     * column -- becomes a heading, with its own link (unless it is a `#`
+     * placeholder) and everything beneath it at any depth as the links under it.
+     * Childless top-level items are loose links, filed under the menu's own name,
+     * which is what the client called it.
      *
      * Each URL is listed once, where it first appears: footers mostly repeat the
-     * primary navigation, and a model gains nothing from reading it twice.
+     * primary navigation, and a model gains nothing from reading it twice. A
+     * description shared by several links -- typically a Yoast template, or the
+     * front page's text inherited by every page without its own -- says nothing
+     * about any of them and is dropped, as is one that repeats the summary.
      *
      * @return list<array{Section, Section[]}>
      */
-    protected function menuSections(): array
+    protected function menuSections(string $summary): array
     {
-        $sections = [];
+        $menus = [];
         $seen = [];
 
         foreach ($this->menus() as $menuId) {
             $object = wp_get_nav_menu_object($menuId);
-            $items = wp_get_nav_menu_items($menuId) ?: [];
-            $parents = array_column(array_map(fn ($item) => ['id' => $item->ID, 'parent' => (int) $item->menu_item_parent], $items), 'parent', 'id');
+            $children = [];
+
+            foreach (wp_get_nav_menu_items($menuId) ?: [] as $item) {
+                $children[(int) $item->menu_item_parent][] = $item;
+            }
 
             $loose = [];
             $groups = [];
 
-            foreach ($items as $item) {
-                if (! $item->menu_item_parent && $this->isGroup($item)) {
-                    $groups[$item->ID] = ['heading' => Format::text($item->title), 'lines' => []];
+            foreach ($children[0] ?? [] as $item) {
+                $links = $this->menuLinks($item, $children, $seen);
 
-                    continue;
-                }
-
-                $url = untrailingslashit((string) $item->url);
-
-                if (isset($seen[$url])) {
-                    continue;
-                }
-
-                $seen[$url] = true;
-                $line = Format::linkLine($item->title, $item->url, $this->menuItemDescription($item));
-                $root = $this->rootItem((int) $item->ID, $parents);
-
-                if (isset($groups[$root])) {
-                    $groups[$root]['lines'][] = $line;
+                if (isset($children[$item->ID])) {
+                    $groups[] = ['heading' => Format::text($item->title), 'links' => $links];
                 } else {
-                    $loose[] = $line;
+                    $loose = array_merge($loose, $links);
                 }
             }
 
-            $sections[] = [
-                ['heading' => $object ? Format::text($object->name) : '', 'lines' => $loose],
-                array_values(array_filter($groups, fn (array $group) => $group['lines'] !== [])),
-            ];
+            $menus[] = [['heading' => $object ? Format::text($object->name) : '', 'links' => $loose], $groups];
         }
 
-        return $sections;
-    }
+        // The summary has already said its text once.
+        $descriptions = $summary !== '' ? [$summary => 1] : [];
 
-    protected function isGroup(object $item): bool
-    {
-        return in_array(trim((string) $item->url), ['#', ''], true);
+        foreach ($menus as [$loose, $groups]) {
+            foreach (array_merge([$loose], $groups) as $section) {
+                foreach ($section['links'] as $link) {
+                    if ($link['description'] !== '') {
+                        $descriptions[$link['description']] = ($descriptions[$link['description']] ?? 0) + 1;
+                    }
+                }
+            }
+        }
+
+        $format = fn (array $section) => [
+            'heading' => $section['heading'],
+            'lines' => array_map(fn (array $link) => Format::linkLine(
+                $link['title'],
+                $link['url'],
+                ($descriptions[$link['description']] ?? 0) > 1 ? '' : $link['description'],
+            ), $section['links']),
+        ];
+
+        return array_map(fn (array $menu) => [
+            $format($menu[0]),
+            array_values(array_filter(array_map($format, $menu[1]), fn (array $group) => $group['lines'] !== [])),
+        ], $menus);
     }
 
     /**
-     * @param  array<int, int>  $parents
+     * An item's own link followed by its descendants', depth first, skipping
+     * placeholders and URLs already listed.
+     *
+     * @param  array<int, object[]>  $children
+     * @param  array<string, bool>  $seen
+     * @return Link[]
      */
-    protected function rootItem(int $itemId, array $parents): int
+    protected function menuLinks(object $item, array $children, array &$seen): array
     {
-        while (($parents[$itemId] ?? 0) !== 0) {
-            $itemId = $parents[$itemId];
+        $links = [];
+        $url = $this->absoluteUrl((string) $item->url);
+        $key = untrailingslashit($url);
+
+        if ($url !== '' && ! isset($seen[$key])) {
+            $seen[$key] = true;
+            $title = Format::text($item->title);
+
+            $links[] = [
+                // A label of only symbols (an `@` icon for an email link) reads as nothing.
+                'title' => preg_match('/[\p{L}\p{N}]/u', $title) ? $title : (string) preg_replace('#^(mailto:|tel:|https?://)#', '', $url),
+                'url' => $url,
+                'description' => $item->type === 'post_type' && $item->object_id ? $this->description((int) $item->object_id) : '',
+            ];
         }
 
-        return $itemId;
+        foreach ($children[$item->ID] ?? [] as $child) {
+            $links = array_merge($links, $this->menuLinks($child, $children, $seen));
+        }
+
+        return $links;
     }
 
-    protected function menuItemDescription(object $item): string
+    /**
+     * A menu item's URL made absolute, or '' when it is not a link at all: `#`
+     * placeholders, in-page anchors that open a cookie dialog, empty custom links.
+     */
+    protected function absoluteUrl(string $url): string
     {
-        return $item->type === 'post_type' && $item->object_id
-            ? $this->description((int) $item->object_id)
-            : '';
+        $url = trim($url);
+
+        if ($url === '' || str_starts_with($url, '#') || str_starts_with(strtolower($url), 'javascript:')) {
+            return '';
+        }
+
+        return \WP_Http::make_absolute_url($url, home_url('/'));
     }
 
     /*
@@ -596,6 +639,8 @@ class LlmsTxt
             'orderby' => 'name',
             'order' => 'ASC',
             'number' => self::MAX_LISTED,
+            // WooCommerce's catch-all "Uncategorized" says nothing about the catalogue.
+            'exclude' => $taxonomy === 'product_cat' ? [(int) get_option('default_product_cat')] : [],
         ];
 
         if ($language && function_exists('pll_languages_list')) {
@@ -699,7 +744,23 @@ class LlmsTxt
 
         $summary = $frontPage > 0 ? $this->description($frontPage, false) : '';
 
-        return $summary ?: Format::truncate(Format::text(get_bloginfo('description')));
+        return $summary ?: $this->tagline();
+    }
+
+    /**
+     * The tagline, unless it is still the one WordPress installs with.
+     */
+    protected function tagline(): string
+    {
+        $tagline = Format::truncate(Format::text(get_bloginfo('description')));
+        $defaults = [__('Just another WordPress site')];
+
+        if (is_multisite()) {
+            /* translators: %s: Network title. */
+            $defaults[] = sprintf(__('Just another %s site'), get_network()->site_name ?? '');
+        }
+
+        return in_array($tagline, $defaults, true) || preg_match('/^Just another .+ site$/', $tagline) ? '' : $tagline;
     }
 
     /*
@@ -732,19 +793,23 @@ class LlmsTxt
     /**
      * The English name of a language, from a Polylang slug or a locale.
      *
-     * Polylang's own `name` field is the endonym -- "Suomi", "Svenska" -- which
-     * reads as a mistake inside the English sentences above. Both `fi` and
-     * `sv_SE` are valid language tags, so intl resolves either; without the
-     * extension the tag itself is a tolerable fallback.
+     * Named from the locale rather than the slug: slugs are often country codes
+     * (`se`, `ch`, `us`) that intl would read as Northern Sami, Chamorro or
+     * nothing, and one language commonly appears once per market, so the region
+     * is kept -- "German (Switzerland)", "German (Austria)". Polylang's own
+     * `name` field is the endonym, which reads as a mistake inside the English
+     * sentences above. Without the intl extension the locale itself is a
+     * tolerable fallback.
      */
     protected function languageName(string $language): string
     {
-        $language = $language ?: (string) get_bloginfo('language');
+        $object = $language && function_exists('PLL') ? PLL()->model->get_language($language) : false;
+        $locale = $object ? $object->locale : ($language ?: get_locale());
 
-        if (function_exists('locale_get_display_language')) {
-            return locale_get_display_language($language, 'en') ?: $language;
+        if (function_exists('locale_get_display_name')) {
+            return locale_get_display_name($locale, 'en') ?: $locale;
         }
 
-        return $language;
+        return $locale;
     }
 }

@@ -69,8 +69,15 @@ class LlmsTxtTest extends WP_UnitTestCase
     {
         $body = (new LlmsTxt)->build('');
 
-        $this->assertStringContainsString('Written in English.', $body);
+        $this->assertStringContainsString('Written in English (United States).', $body);
         $this->assertStringContainsString('followed by `index.html.md`', $body);
+    }
+
+    public function test_the_default_tagline_is_not_a_summary(): void
+    {
+        update_option('blogdescription', 'Just another WordPress site');
+
+        $this->assertStringStartsWith("# Acme\n\nWritten in", (new LlmsTxt)->build(''));
     }
 
     /**
@@ -113,6 +120,62 @@ class LlmsTxtTest extends WP_UnitTestCase
         $body = (new LlmsTxt)->build('');
 
         $this->assertStringContainsString("## Products\n- [Pumps](https://example.com/pumps)\n- [Hand pumps](https://example.com/pumps/hand)", $body);
+    }
+
+    /**
+     * Mega menus usually hang their columns off a real page ("Products") rather
+     * than a `#` placeholder; that page heads the section and leads its links.
+     */
+    public function test_a_top_level_page_with_children_becomes_a_section(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $parent = $this->customItem($menu, 'Products', 'https://example.com/products/');
+        $this->customItem($menu, 'Pumps', 'https://example.com/products/pumps/', $parent);
+        $this->customItem($menu, 'Contact', 'https://example.com/contact/');
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringContainsString("## Products\n- [Products](https://example.com/products/)\n- [Pumps](https://example.com/products/pumps/)", $body);
+        $this->assertLessThan(strpos($body, '## Products'), strpos($body, '- [Contact]'));
+    }
+
+    public function test_menu_links_are_absolute_and_placeholders_skipped(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $this->customItem($menu, 'All stories', '/stories/');
+        $this->customItem($menu, 'Cookie settings', '#cookies');
+        $this->customItem($menu, '@', 'mailto:hello@example.com');
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringContainsString('- [All stories]('.home_url('/stories/').')', $body);
+        $this->assertStringNotContainsString('Cookie settings', $body);
+        $this->assertStringContainsString('- [hello@example.com](mailto:hello@example.com)', $body);
+    }
+
+    /**
+     * A description every page shares -- a Yoast template, or the front page's
+     * text inherited by pages without their own -- tells a model nothing.
+     */
+    public function test_a_repeated_description_is_dropped(): void
+    {
+        $shared = 'Welcome to our farm, where the horses greet every visitor.';
+        $first = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Archive', 'post_excerpt' => $shared]);
+        $second = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Subscribe', 'post_excerpt' => $shared]);
+        $third = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Contact', 'post_excerpt' => 'Phone and email for the editors.']);
+
+        $menu = wp_create_nav_menu('Main');
+        foreach ([$first, $second, $third] as $page) {
+            $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type']);
+        }
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringNotContainsString($shared, $body);
+        $this->assertStringContainsString('[Contact]('.get_permalink($third).'): Phone and email for the editors.', $body);
     }
 
     /**
@@ -216,7 +279,8 @@ class LlmsTxtTest extends WP_UnitTestCase
     public function test_the_document_is_filterable(): void
     {
         $filter = function (array $document) {
-            array_unshift($document['intro'], 'Acme sells pumps.');
+            $document['intro'] = ['about' => 'Acme sells pumps.'] + $document['intro'];
+            unset($document['intro']['markdown']);
             $document['sections'] = array_filter($document['sections'], fn ($section) => $section['heading'] !== 'Optional');
 
             return $document;
@@ -226,7 +290,8 @@ class LlmsTxtTest extends WP_UnitTestCase
         $body = (new LlmsTxt)->build('');
         remove_filter('gds/llms_txt/document', $filter);
 
-        $this->assertStringContainsString("\nAcme sells pumps. Written in English.", $body);
+        $this->assertStringContainsString("\nAcme sells pumps. Written in English", $body);
+        $this->assertStringNotContainsString('index.html.md', $body);
         $this->assertStringNotContainsString('## Optional', $body);
     }
 

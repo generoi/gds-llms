@@ -18,13 +18,15 @@ Content that a block draws with JavaScript (maps, iframes, API-fed carousels) ha
 |---|---|---|
 | `gds/llms_txt/menus` | every location with a menu assigned, `primary_navigation` first | Drop a location that should not be listed, such as an intranet menu. The first entry is treated as the primary navigation. |
 | `gds/llms_txt/taxonomies` | `['product_cat']` | Add a site's own product taxonomy. |
-| `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences), `links` (header links) and `sections` (`heading`, `lines`). |
+| `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences keyed `language`, `translations`, `markdown`, `commerce`, `catalogue`, `network`), `links` (header links) and `sections` (`heading`, `lines`). |
 | `gds/llms/markdown_available` | published, viewable, not password-protected | Return `false` for content the theme hides behind a login. |
 
 ```php
-// What the business does, which nothing on the site states in one sentence.
+// What the business does, which nothing on the site states in one sentence,
+// and no "Related sites" for a network of unrelated shops.
 add_filter('gds/llms_txt/document', function (array $document) {
-    array_unshift($document['intro'], 'Acme makes industrial pumps for the Nordic market.');
+    $document['intro'] = ['about' => 'Acme makes industrial pumps for the Nordic market.'] + $document['intro'];
+    unset($document['intro']['network']);
 
     return $document;
 });
