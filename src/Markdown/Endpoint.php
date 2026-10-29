@@ -2,7 +2,6 @@
 
 namespace GeneroWP\Llms\Markdown;
 
-use GeneroWP\Llms\Integrations\ArchivePages;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
@@ -46,12 +45,12 @@ class Endpoint
 
     protected Listings $listings;
 
-    protected ArchivePages $archivePages;
+    protected PageListing $pageListing;
 
     public function __construct()
     {
         $this->listings = new Listings;
-        $this->archivePages = new ArchivePages($this->listings);
+        $this->pageListing = new PageListing($this->listings);
     }
 
     public function register(): void
@@ -266,8 +265,8 @@ class Endpoint
 
     /**
      * What `content` mode converts for the page being viewed: a listing is
-     * built from its query, a single page from its content -- or, standing in
-     * for an archive (ArchivePages), as the listing it stands in for.
+     * built from its query, a single page from its content -- or, for a page
+     * that lists something beneath it (PageListing), as that listing.
      */
     public function source(): Source
     {
@@ -284,7 +283,7 @@ class Endpoint
             throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
         }
 
-        return $this->archivePages->source(new ContentSource($post));
+        return $this->pageListing->source(new ContentSource($post), $post);
     }
 
     public function markdown(Source $source): string

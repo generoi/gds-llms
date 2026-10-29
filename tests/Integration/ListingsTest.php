@@ -187,18 +187,33 @@ class ListingsTest extends WP_UnitTestCase
     }
 
     /**
-     * sage-archive-pages maps a page to a post type and lists it from the
-     * page's template; the markdown lists it under the page's content.
+     * A page whose template lists posts (sage-archive-pages) says so through
+     * the filter; the markdown lists them under the page's content.
      */
-    public function test_a_page_standing_in_for_an_archive_is_listed(): void
+    public function test_a_page_that_declares_a_listing_is_listed(): void
     {
         $page = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Stories', 'post_content' => '<p>What we have done.</p>']);
         $this->posts(4);
+        $this->listsPosts($page);
 
         $this->go_to(get_permalink($page));
-        set_query_var('mapped_post_archive', 'post');
 
         $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n4 results.", $this->markdown());
+    }
+
+    public function test_a_page_without_a_listing_is_its_content(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_content' => '<p>What we have done.</p>']);
+        $this->posts(4);
+
+        $this->go_to(get_permalink($page));
+
+        $this->assertStringNotContainsString('results.', $this->markdown());
+    }
+
+    protected function listsPosts(int $page): void
+    {
+        add_filter('gds/llms/markdown_listing', fn ($args, \WP_Post $post) => $post->ID === $page ? ['post_type' => 'post'] : $args, 10, 2);
     }
 
     /**
@@ -210,8 +225,8 @@ class ListingsTest extends WP_UnitTestCase
         $post = $this->posts(1)[0];
         $page = self::factory()->post->create(['post_type' => 'page', 'post_content' => '<h3><a href="'.get_permalink($post).'">Our story</a></h3>']);
 
+        $this->listsPosts($page);
         $this->go_to(get_permalink($page));
-        set_query_var('mapped_post_archive', 'post');
         $markdown = $this->markdown();
 
         $this->assertStringContainsString('[Our story]', $markdown);

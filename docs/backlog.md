@@ -84,7 +84,7 @@ language (`switch_to_locale()` while building llms.txt and markdown).
 
 ## Pages that list something: a filter, not an integration
 
-- [ ] Replace `Integrations\ArchivePages` (reads sage-archive-pages'
+- [x] Replace `Integrations\ArchivePages` (reads sage-archive-pages'
   `mapped_post_archive`) with a generic `gds/llms/markdown_listing` filter:
   page in, WP_Query args out. sage-archive-pages answers it from its own
   mapping (10 repos use it); any site can declare its own.
