@@ -89,6 +89,29 @@ class Polylang
         return $locale;
     }
 
+    /**
+     * The page being viewed in each of its other languages, as the
+     * `<link rel="alternate" hreflang>` tags Polylang prints in an HTML page's
+     * head -- from the same get_translation_url(), so a post, an archive and
+     * a term all resolve as they do there, and a missing translation is left
+     * out.
+     */
+    public static function alternateLinks(): string
+    {
+        if (! self::isActive() || ! isset(PLL()->links)) {
+            return '';
+        }
+
+        $html = '';
+        foreach (PLL()->model->get_languages_list() as $language) {
+            if ($language->slug !== self::current() && ($url = PLL()->links->get_translation_url($language))) {
+                $html .= sprintf('<link rel="alternate" hreflang="%s" href="%s">', esc_attr(str_replace('_', '-', $language->locale)), esc_url($url));
+            }
+        }
+
+        return $html;
+    }
+
     protected static function language(string $language): \PLL_Language|false
     {
         return $language && function_exists('PLL') ? PLL()->model->get_language($language) : false;

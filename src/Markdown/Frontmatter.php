@@ -30,7 +30,8 @@ class Frontmatter
             'description' => $this->meta('description') ?: $this->meta('og:description'),
             'image' => $this->meta('og:image'),
             'url' => $this->dom->first('//link[@rel="canonical"]')?->getAttribute('href') ?: $this->base,
-            'language' => Format::text($this->dom->first('//html')?->getAttribute('lang')),
+            'language' => $language = Format::text($this->dom->first('//html')?->getAttribute('lang')),
+            'translations' => $this->translations($language),
             'modified' => $this->meta('article:modified_time'),
             // Open Graph's product tags, else the page's schema.org Offer.
             'price' => $this->meta('product:price:amount') ?: $offer['price'],
@@ -63,6 +64,30 @@ class Frontmatter
         }
 
         return $blocks;
+    }
+
+    /**
+     * Each other language's markdown version, keyed by its hreflang, from the
+     * page's `<link rel="alternate" hreflang>` tags: Polylang's own in `page`
+     * mode, the same printed by the sources in `content` mode. A JSON object
+     * is a YAML flow mapping, so it stays one line like the other fields.
+     *
+     * @return array<string, string>
+     */
+    protected function translations(string $language): array
+    {
+        $translations = [];
+
+        foreach ($this->dom->query('//link[@rel="alternate"][@hreflang]') as $link) {
+            $hreflang = $link->getAttribute('hreflang');
+            $url = Endpoint::url($link->getAttribute('href'));
+
+            if ($hreflang !== 'x-default' && strcasecmp($hreflang, $language) !== 0 && $url !== '') {
+                $translations[$hreflang] = $url;
+            }
+        }
+
+        return $translations;
     }
 
     /**
