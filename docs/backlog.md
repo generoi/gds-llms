@@ -6,19 +6,23 @@ snellmanrecipes, op-hippo, feelia, ffjaro, medihealth (live HTML).
 
 ## Blockers before tagging v0.1.0
 
-- [ ] **Markdown bypasses login walls.** `maybeSend()` answers at
+- [x] **Markdown bypasses login walls.** `maybeSend()` answers at
   `template_redirect:0`, before gates that redirect there. Verified on
   snellmanpetfood: the HTML redirects to /my-account/, the `.md` returns 200
   with reseller-only content (wp-snellman-m3 `RestrictedContentHandler`).
   Template-level gates (ekorosk intranet) leak the same way.
-- [ ] **Comment-only content throws** `InvalidArgumentException: Invalid HTML`
+- [x] **Comment-only content throws** `InvalidArgumentException: Invalid HTML`
   (500 on maatilanpellervo); script/style-only content emits
   `<!--?xml encoding="UTF-8"-->`. Wrapping the HTML in a `<div>` fixes both.
-- [ ] **File permalinks get a `.md` URL**: post types whose permalink is the
+- [x] **File permalinks get a `.md` URL**: post types whose permalink is the
   file (beamex `resource` PDFs, kaskipuu `material` SVGs) advertise
-  `file.pdf.md`.
+  `file.pdf.md`. Now any path with an extension other than `.html`/`.htm`
+  has none.
 
-## Proposed: convert the rendered page's `<main>`, not `the_content`
+## Done as an opt-in: convert the rendered page's `<main>` (`page` mode)
+
+Shipped as `gds/llms/markdown_mode` → `page`; `content` stays the default,
+answering after the `template_redirect` gates.
 
 Let the request run normally, buffer the output after every
 `template_redirect` gate, convert `<main>` (selector filterable), fall back to
@@ -31,21 +35,22 @@ page a markdown version too. Cost: one normal page render.
 
 ## Converter: follow screen-reader semantics
 
-- [ ] Keep the text of disclosure/tab buttons (`aria-expanded`,
+- [x] Keep the text of disclosure/tab buttons (`aria-expanded`,
   `aria-controls`, `role="tab"`); drop other buttons. Today the FAQ questions
   vanish from core/accordion (kaskipuu, pellervo) and beamex
   `gds/faq-accordion` (152 blocks), and tab names from core/tabs (kaskipuu)
   and beamex `gds/tabs`.
-- [ ] Drop `aria-hidden="true"` subtrees.
-- [ ] Drop images with `alt=""`; fall back to `data-src` for lazy images
+- [x] Drop `aria-hidden="true"` subtrees.
+- [x] Drop images with `alt=""`; fall back to `data-src` for lazy images
   instead of emitting `![]()` (beamex, snellmanrecipes, medihealth).
-- [ ] `<iframe title src>` → `[title](src)` instead of dropping it (JNT Google
+- [x] `<iframe title src>` → `[title](src)` instead of dropping it (JNT Google
   Maps, beamex 3D model).
 - [ ] Treat non-`<a>` elements with `href` as links (`<gds-media-card href>`
-  on hippo: every card title loses its link).
-- [ ] Empty-text links: use `aria-label`, else drop (`[](url)` on medihealth
+  on hippo: every card title loses its link). Open: hippo's link lives only
+  in the shadow DOM, so this needs the block fix below as well.
+- [x] Empty-text links: use `aria-label`, else drop (`[](url)` on medihealth
   cards). Drop `#`/`#comments` placeholder hrefs, keep the text.
-- [ ] Heading inside a link renders `[ ## Title ](url)`; emit
+- [x] Heading inside a link renders `[ ## Title ](url)`; emit
   `## [Title](url)` (beamex video slideshow).
 - [ ] Block-level text glued to a preceding link inside list items
   (`[title](url)Excerpt…` in core/latest-posts).
@@ -76,6 +81,13 @@ language (`switch_to_locale()` while building llms.txt and markdown).
 - [x] Stay English: the `Optional` heading (fixed by the llms.txt format),
   robots.txt Content-Signal licence text, HTTP headers, exception messages,
   bot names.
+
+## Pages that list something: a filter, not an integration
+
+- [ ] Replace `Integrations\ArchivePages` (reads sage-archive-pages'
+  `mapped_post_archive`) with a generic `gds/llms/markdown_listing` filter:
+  page in, WP_Query args out. sage-archive-pages answers it from its own
+  mapping (10 repos use it); any site can declare its own.
 
 ## Markdown: link translations
 

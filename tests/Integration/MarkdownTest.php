@@ -45,6 +45,28 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertSame('', Markdown::url(false));
     }
 
+    public function test_files_have_no_markdown_url(): void
+    {
+        $this->assertSame('', Markdown::url('https://example.com/app/uploads/datasheet.pdf'));
+        $this->assertSame('', Markdown::url('https://example.com/materials/door.SVG'));
+        $this->assertSame('https://example.com/about.html.md', Markdown::url('https://example.com/about.html'));
+        $this->assertSame('https://example.com/v1.2/index.html.md', Markdown::url('https://example.com/v1.2/'));
+    }
+
+    /**
+     * A post type whose permalink is its file (beamex resources) gets no
+     * markdown link on its own page either.
+     */
+    public function test_posts_whose_permalink_is_a_file_have_no_markdown(): void
+    {
+        $post = self::factory()->post->create();
+        $this->go_to(get_permalink($post));
+        add_filter('post_link', fn () => 'https://example.com/app/uploads/datasheet.pdf');
+
+        $this->assertFalse((new Markdown)->isAvailable());
+        $this->assertSame('', (new Markdown)->alternateUrl());
+    }
+
     public function test_html_path_reverses_both_forms(): void
     {
         $this->assertSame('/about/', Markdown::htmlPath('/about/index.html.md'));

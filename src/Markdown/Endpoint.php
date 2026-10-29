@@ -78,11 +78,26 @@ class Endpoint
      */
     public static function url(string|false $url): string
     {
-        if (! $url || str_contains($url, '?')) {
+        if (! $url || str_contains($url, '?') || ! self::isHtmlPath((string) parse_url($url, PHP_URL_PATH))) {
             return '';
         }
 
         return str_ends_with($url, '/') ? $url.self::SUFFIX : $url.'.md';
+    }
+
+    /**
+     * Whether a path can be an HTML page: no extension, or `.html`/`.htm`.
+     *
+     * A post type whose permalink is its file -- a PDF resource, an SVG
+     * material -- would otherwise be advertised as `file.pdf.md`, a
+     * conversion of nothing. WordPress turns dots in slugs into dashes, so an
+     * extension on a permalink means a file.
+     */
+    protected static function isHtmlPath(string $path): bool
+    {
+        $extension = str_ends_with($path, '/') ? '' : strtolower(pathinfo($path, PATHINFO_EXTENSION));
+
+        return in_array($extension, ['', 'html', 'htm'], true);
     }
 
     /**
@@ -197,6 +212,11 @@ class Endpoint
         // Including a protected page in front of a listing: the posts page, or
         // one standing in for an archive, whose content is its introduction.
         if ($object instanceof WP_Post && post_password_required($object)) {
+            $available = false;
+        }
+
+        // A post whose permalink is a file (see isHtmlPath()).
+        if (is_singular() && $object instanceof WP_Post && self::url(get_permalink($object)) === '') {
             $available = false;
         }
 
