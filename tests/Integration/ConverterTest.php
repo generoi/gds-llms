@@ -22,6 +22,18 @@ class ConverterTest extends WP_UnitTestCase
         return (string) preg_replace('/\A---\n.*?\n---\n\n?/s', '', $this->page($main, $head));
     }
 
+    /**
+     * FacetWP prints an empty placeholder per facet and fills it with
+     * JavaScript; a list of them is a list of bullets with nothing to say.
+     */
+    public function test_empty_list_items_are_dropped(): void
+    {
+        $markdown = $this->convert('<ul class="filters"><li class="filter"><div class="facetwp-facet facetwp-type-dropdown"></div></li><li class="filter"> </li></ul><ul><li>Pumps</li><li><img src="/a.jpg" alt="Valve"></li><li><select><option>Any</option></select></li></ul>');
+
+        $this->assertDoesNotMatchRegularExpression('/^[-*]\s*$/m', $markdown);
+        $this->assertStringContainsString("- Pumps\n- ![Valve](https://example.com/a.jpg)", $markdown);
+    }
+
     public function test_frontmatter_carries_the_page_metadata(): void
     {
         $markdown = $this->page(
