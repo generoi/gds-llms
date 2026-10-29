@@ -231,8 +231,37 @@ class LlmsTxt
             'summary' => $summary,
             'intro' => $this->intro($language),
             'links' => $links,
-            'sections' => array_merge($sections, $this->catalogueSections($language), $this->optionalSections()),
+            'sections' => array_merge($this->mergeSections($sections), $this->catalogueSections($language), $this->optionalSections()),
         ];
+    }
+
+    /**
+     * Sections with the same heading as one, where the first appears.
+     *
+     * Sites that split their audience (private / business) usually repeat that
+     * split in every menu -- primary, tools, contact, footer -- and four
+     * "## Business" sections read as four different things.
+     *
+     * @param  Section[]  $sections
+     * @return Section[]
+     */
+    protected function mergeSections(array $sections): array
+    {
+        $merged = [];
+        $positions = [];
+
+        foreach ($sections as $section) {
+            $position = $positions[$section['heading']] ?? null;
+
+            if ($position === null) {
+                $positions[$section['heading']] = count($merged);
+                $merged[] = $section;
+            } else {
+                $merged[$position]['lines'] = array_merge($merged[$position]['lines'], $section['lines']);
+            }
+        }
+
+        return $merged;
     }
 
     /**
@@ -411,7 +440,7 @@ class LlmsTxt
                 '[%s](%s)%s',
                 Format::linkLabel($name),
                 Format::linkUrl(get_home_url($blogId)),
-                $locale ? sprintf(' (in %s)', $this->languageName($locale)) : '',
+                $locale ? ' in '.$this->languageName($locale) : '',
             );
         }
 

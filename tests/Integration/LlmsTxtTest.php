@@ -236,6 +236,25 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('Footer EN', $body);
     }
 
+    /**
+     * A private / business split repeated in every menu is one section each.
+     */
+    public function test_sections_with_the_same_heading_are_merged(): void
+    {
+        $primary = wp_create_nav_menu('Main');
+        $business = $this->customItem($primary, 'Business', '#');
+        $this->customItem($primary, 'Fibre', 'https://example.com/business/fibre/', $business);
+        $footer = wp_create_nav_menu('Footer');
+        $column = $this->customItem($footer, 'Business', '#');
+        $this->customItem($footer, 'Support', 'https://example.com/business/support/', $column);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'footer_navigation' => $footer]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertSame(1, substr_count($body, '## Business'));
+        $this->assertStringContainsString("## Business\n- [Fibre](https://example.com/business/fibre/)\n- [Support](https://example.com/business/support/)", $body);
+    }
+
     public function test_menus_are_excluded_by_location(): void
     {
         $intra = wp_create_nav_menu('Intranet');
