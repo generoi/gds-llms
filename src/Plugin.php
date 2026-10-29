@@ -17,7 +17,7 @@ class Plugin
      * Deferred to muplugins_loaded so a site's own mu-plugins can register the
      * `gds/llms*` filters regardless of the order their filenames sort in, while
      * still running before regular plugins -- Polylang included -- read the
-     * request URI that Markdown rewrites.
+     * request URI that Markdown\Endpoint rewrites.
      */
     public function __construct()
     {
@@ -33,8 +33,8 @@ class Plugin
 
         $this->booted = true;
 
-        (new LlmsTxt)->register();
-        (new Markdown)->register();
+        (new LlmsTxt\Endpoint)->register();
+        (new Markdown\Endpoint)->register();
         (new Robots)->register();
     }
 }

@@ -2,7 +2,8 @@
 
 namespace GeneroWP\Llms\Tests\Integration;
 
-use GeneroWP\Llms\LlmsTxt;
+use GeneroWP\Llms\LlmsTxt\Document;
+use GeneroWP\Llms\LlmsTxt\Endpoint as LlmsTxt;
 use WP_UnitTestCase;
 
 class LlmsTxtTest extends WP_UnitTestCase
@@ -34,7 +35,7 @@ class LlmsTxtTest extends WP_UnitTestCase
 
     public function test_starts_with_the_site_name_and_tagline(): void
     {
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringStartsWith("# Acme\n\n> We make things.\n", $body);
     }
@@ -49,7 +50,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         update_option('show_on_front', 'page');
         update_option('page_on_front', $front);
 
-        $this->assertStringContainsString('> Industrial pumps since 1950.', (new LlmsTxt)->build(''));
+        $this->assertStringContainsString('> Industrial pumps since 1950.', (new Document)->build(''));
     }
 
     /**
@@ -62,12 +63,12 @@ class LlmsTxtTest extends WP_UnitTestCase
         update_option('show_on_front', 'page');
         update_option('page_on_front', $front);
 
-        $this->assertStringContainsString('> We make things.', (new LlmsTxt)->build(''));
+        $this->assertStringContainsString('> We make things.', (new Document)->build(''));
     }
 
     public function test_intro_states_the_language_and_the_markdown_urls(): void
     {
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString('Written in English (United States).', $body);
         $this->assertStringContainsString('followed by `index.html.md`', $body);
@@ -77,7 +78,7 @@ class LlmsTxtTest extends WP_UnitTestCase
     {
         update_option('blogdescription', 'Just another WordPress site');
 
-        $this->assertStringStartsWith("# Acme\n\nWritten in", (new LlmsTxt)->build(''));
+        $this->assertStringStartsWith("# Acme\n\nWritten in", (new Document)->build(''));
     }
 
     /**
@@ -95,7 +96,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($menu, 'Contact', 'https://example.com/contact');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString("## Services\n- [Repairs](".get_permalink($page).'): We fix pumps.', $body);
         $this->assertLessThan(
@@ -117,7 +118,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($menu, 'Hand pumps', 'https://example.com/pumps/hand', $child);
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString("## Products\n- [Pumps](https://example.com/pumps)\n- [Hand pumps](https://example.com/pumps/hand)", $body);
     }
@@ -134,7 +135,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($menu, 'Contact', 'https://example.com/contact/');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString("## Products\n- [Products](https://example.com/products/)\n- [Pumps](https://example.com/products/pumps/)", $body);
         $this->assertLessThan(strpos($body, '## Products'), strpos($body, '- [Contact]'));
@@ -148,7 +149,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($menu, '@', 'mailto:hello@example.com');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString('- [All stories]('.home_url('/stories/').')', $body);
         $this->assertStringNotContainsString('Cookie settings', $body);
@@ -172,7 +173,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         }
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringNotContainsString($shared, $body);
         $this->assertStringContainsString('[Contact]('.get_permalink($third).'): Phone and email for the editors.', $body);
@@ -190,7 +191,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($primary, 'About', 'https://example.com/about');
         set_theme_mod('nav_menu_locations', ['top_navigation' => $top, 'primary_navigation' => $primary]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString("\n- [About](https://example.com/about)\n\n## Quick links\n- [Careers](https://example.com/careers)", $body);
     }
@@ -201,7 +202,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($primary, 'About', 'https://example.com/about');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'mobile_navigation' => $primary]);
 
-        $this->assertSame(1, substr_count((new LlmsTxt)->build(''), '[About]'));
+        $this->assertSame(1, substr_count((new Document)->build(''), '[About]'));
     }
 
     public function test_a_url_is_listed_once_across_menus(): void
@@ -213,7 +214,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($footer, 'Privacy', 'https://example.com/privacy');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'footer_navigation' => $footer]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringNotContainsString('About us', $body);
         $this->assertStringContainsString("## Footer\n- [Privacy](https://example.com/privacy)", $body);
@@ -230,7 +231,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($footer, 'Delivery terms', 'https://example.com/delivery', $column);
         set_theme_mod('nav_menu_locations', ['footer_navigation' => $footer]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertStringContainsString("## Customer service\n- [Delivery terms](https://example.com/delivery)", $body);
         $this->assertStringNotContainsString('Footer EN', $body);
@@ -249,7 +250,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->customItem($footer, 'Support', 'https://example.com/business/support/', $column);
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'footer_navigation' => $footer]);
 
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
 
         $this->assertSame(1, substr_count($body, '## Business'));
         $this->assertStringContainsString("## Business\n- [Fibre](https://example.com/business/fibre/)\n- [Support](https://example.com/business/support/)", $body);
@@ -263,7 +264,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $filter = fn (array $locations) => array_diff($locations, ['intra_navigation']);
 
         add_filter('gds/llms_txt/menus', $filter);
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
         remove_filter('gds/llms_txt/menus', $filter);
 
         $this->assertStringNotContainsString('Staff handbook', $body);
@@ -278,7 +279,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $filter = fn () => ['catalogue'];
 
         add_filter('gds/llms_txt/taxonomies', $filter);
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
         remove_filter('gds/llms_txt/taxonomies', $filter);
         unregister_taxonomy('catalogue');
 
@@ -294,7 +295,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $filter = fn () => ['catalogue'];
 
         add_filter('gds/llms_txt/taxonomies', $filter);
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
         remove_filter('gds/llms_txt/taxonomies', $filter);
         unregister_taxonomy('catalogue');
 
@@ -303,7 +304,7 @@ class LlmsTxtTest extends WP_UnitTestCase
 
     public function test_optional_section_links_the_sitemap(): void
     {
-        $this->assertStringContainsString("## Optional\n- [Sitemap](".home_url('/wp-sitemap.xml').')', (new LlmsTxt)->build(''));
+        $this->assertStringContainsString("## Optional\n- [Sitemap](".home_url('/wp-sitemap.xml').')', (new Document)->build(''));
     }
 
     /**
@@ -321,7 +322,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         };
 
         add_filter('gds/llms_txt/document', $filter);
-        $body = (new LlmsTxt)->build('');
+        $body = (new Document)->build('');
         remove_filter('gds/llms_txt/document', $filter);
 
         $this->assertStringContainsString("\nAcme sells pumps. Written in English", $body);

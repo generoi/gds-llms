@@ -1,6 +1,6 @@
 <?php
 
-namespace GeneroWP\Llms;
+namespace GeneroWP\Llms\Integrations;
 
 use Genero\Sage\CacheTags\CacheTags as SageCacheTags;
 use Genero\Sage\CacheTags\Tags\CoreTags;

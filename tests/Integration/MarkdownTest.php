@@ -2,7 +2,7 @@
 
 namespace GeneroWP\Llms\Tests\Integration;
 
-use GeneroWP\Llms\Markdown;
+use GeneroWP\Llms\Markdown\Endpoint as Markdown;
 use WP_UnitTestCase;
 
 class MarkdownTest extends WP_UnitTestCase
