@@ -106,7 +106,8 @@ class Endpoint
     }
 
     /**
-     * mu-plugins have no activation hook, so flush once per rule revision instead.
+     * Flushed once per rule revision rather than on activation: a Composer
+     * update brings new rules without activating anything.
      *
      * On wp_loaded rather than alongside add_rewrite_rule() on init: a flush
      * regenerates every rule from what has been registered so far, so flushing

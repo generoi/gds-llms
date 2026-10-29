@@ -1,6 +1,6 @@
 {
     "name": "generoi/gds-llms",
-    "type": "wordpress-muplugin",
+    "type": "wordpress-plugin",
     "license": "MIT",
     "description": "Serves /llms.txt and a markdown version of every page for language models",
     "homepage": "https://github.com/generoi/gds-llms",
@@ -43,7 +43,7 @@
         "lint": "pint --test",
         "lint:fix": "pint",
         "test": "phpunit",
-        "test:wp-env": "npx wp-env run tests-cli --env-cwd=wp-content/mu-plugins/gds-llms php -d memory_limit=1024M vendor/bin/phpunit",
+        "test:wp-env": "npx wp-env run tests-cli --env-cwd=wp-content/plugins/gds-llms php -d memory_limit=1024M vendor/bin/phpunit",
         "stan": "./vendor/bin/phpstan analyse --memory-limit=1G"
     },
     "config": {

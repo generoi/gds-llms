@@ -4,7 +4,7 @@
     "scripts": {
         "env:start": "wp-env start",
         "env:stop": "wp-env stop",
-        "test:php": "wp-env run tests-cli --env-cwd=wp-content/mu-plugins/gds-llms php -d memory_limit=1024M vendor/bin/phpunit"
+        "test:php": "wp-env run tests-cli --env-cwd=wp-content/plugins/gds-llms php -d memory_limit=1024M vendor/bin/phpunit"
     },
     "devDependencies": {
         "@wordpress/env": "^10.14.0"
