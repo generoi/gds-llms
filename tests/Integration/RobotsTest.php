@@ -20,6 +20,13 @@ class RobotsTest extends WP_UnitTestCase
         $this->assertSame('train-ai=y, ai-use=y, search=y', Robots::contentUsage());
     }
 
+    public function test_a_site_hidden_from_search_engines_declines_every_use(): void
+    {
+        update_option('blog_public', '0');
+
+        $this->assertSame('search=no, ai-input=no, ai-train=no', Robots::contentSignal());
+    }
+
     /**
      * Both drafts define these as group rules. A `*` group of their own, which
      * crawlers merge with the site's, leaves the site's rules untouched.

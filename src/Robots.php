@@ -60,16 +60,20 @@ class Robots
      */
     public static function policy(): array
     {
+        // A site that discourages search engines -- staging, pre-launch -- is
+        // not offering its content for any of these either.
+        $public = (bool) get_option('blog_public');
+
         $policy = (array) apply_filters('gds/llms/ai_policy', [
-            'search' => true,
-            'ai-input' => true,
-            'ai-train' => true,
+            'search' => $public,
+            'ai-input' => $public,
+            'ai-train' => $public,
         ]);
 
         return [
-            'search' => (bool) ($policy['search'] ?? true),
-            'ai-input' => (bool) ($policy['ai-input'] ?? true),
-            'ai-train' => (bool) ($policy['ai-train'] ?? true),
+            'search' => (bool) ($policy['search'] ?? $public),
+            'ai-input' => (bool) ($policy['ai-input'] ?? $public),
+            'ai-train' => (bool) ($policy['ai-train'] ?? $public),
         ];
     }
 

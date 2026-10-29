@@ -91,11 +91,13 @@ class Catalogue
     public function sentence(): string
     {
         $links = [];
+        $types = [];
 
         foreach ($this->taxonomies() as $taxonomy) {
             if ($page = $this->landingPage($taxonomy)) {
                 $this->posts[] = $page->ID;
                 $links[] = sprintf('[%s](%s)', Format::linkLabel($page->post_title), Format::linkUrl((string) get_permalink($page)));
+                $types = array_merge($types, (array) get_taxonomy($taxonomy)->object_type);
             }
         }
 
@@ -104,10 +106,13 @@ class Catalogue
         }
 
         $last = array_pop($links);
+        // What the trees hold: WooCommerce products by default, a site's own
+        // product post type when it lists its own taxonomy.
+        $count = array_sum(array_map(fn (string $type) => (int) (wp_count_posts($type)->publish ?? 0), array_unique($types)));
 
         return sprintf(
             'The %s products are organised under %s.',
-            number_format_i18n((int) (wp_count_posts('product')->publish ?? 0)),
+            number_format_i18n($count),
             $links ? implode(', ', $links).' and '.$last : $last,
         );
     }

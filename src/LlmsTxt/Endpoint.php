@@ -140,7 +140,7 @@ class Endpoint
 
     public function maybeSend(): void
     {
-        if (! get_query_var(self::QUERY_VAR) || RankMath::handlesLlmsTxt()) {
+        if (! $this->isRequested() || RankMath::handlesLlmsTxt()) {
             return;
         }
 
@@ -165,6 +165,19 @@ class Endpoint
 
         echo $response['body'];
         exit;
+    }
+
+    /**
+     * Whether the request is for llms.txt itself. The query var has to be
+     * public for the rewrite rule to set it, which also lets any URL set it in
+     * its query string (`/about/?gds_llms_txt=1`); only the rule's own match
+     * counts.
+     */
+    public function isRequested(): bool
+    {
+        global $wp;
+
+        return get_query_var(self::QUERY_VAR) && str_starts_with((string) $wp->matched_query, self::QUERY_VAR.'=');
     }
 
     public function body(string $language): string
