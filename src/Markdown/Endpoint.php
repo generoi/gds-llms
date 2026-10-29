@@ -51,6 +51,7 @@ class Endpoint
             // `/about.md` is rewritten to `/about`, which canonical redirect
             // would bounce to `/about/` -- the HTML page.
             add_filter('redirect_canonical', '__return_false');
+            add_action('wp_loaded', [FacetWP::class, 'expandListings']);
             // Last, so every gate on template_redirect has had its say.
             add_action('template_redirect', [$this, 'start'], PHP_INT_MAX);
         } else {

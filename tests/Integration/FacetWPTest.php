@@ -96,6 +96,39 @@ class FacetWPTest extends WP_UnitTestCase
         $this->assertStringContainsString('href="https://example.com/references/?_industries=food-beverage"', $html);
     }
 
+    /**
+     * A listing short enough for one markdown page has no pager to follow.
+     */
+    public function test_a_single_page_has_no_pager(): void
+    {
+        FWP()->facet->output['settings']['pager'] = ['page' => 1, 'total_rows' => 24, 'total_pages' => 1];
+
+        $html = FacetWP::fill($this->page(), 'https://example.com/references/');
+
+        $this->assertStringContainsString('<p>24 results.</p>', $html);
+        $this->assertStringNotContainsString('Pages', $html);
+    }
+
+    public function test_markdown_lists_up_to_a_hundred_results_per_page(): void
+    {
+        $listing = new \WP_Query;
+        $listing->set('facetwp', true);
+        $listing->set('posts_per_page', 8);
+        $long = new \WP_Query;
+        $long->set('facetwp', true);
+        $long->set('posts_per_page', 200);
+        $other = new \WP_Query;
+        $other->set('posts_per_page', 8);
+
+        foreach ([$listing, $long, $other] as $query) {
+            FacetWP::expandListing($query);
+        }
+
+        $this->assertSame(FacetWP::PER_PAGE, $listing->get('posts_per_page'));
+        $this->assertSame(200, $long->get('posts_per_page'));
+        $this->assertSame(8, $other->get('posts_per_page'), 'Only the listing FacetWP filters.');
+    }
+
     public function test_a_page_without_facets_is_untouched(): void
     {
         FWP()->display->active_facets = [];

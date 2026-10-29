@@ -20,6 +20,18 @@ class FacetWP_Request
     public $url_vars = [];
 
     /**
+     * FacetWP's real check also takes the main query of an archive; the fake
+     * only honours the `facetwp` flag a listing block sets.
+     *
+     * @param  WP_Query  $query
+     * @return bool
+     */
+    public function is_main_query($query)
+    {
+        return $query->get('facetwp') === true;
+    }
+
+    /**
      * @param  array<string, mixed>  $items
      * @return array<string, mixed>
      */

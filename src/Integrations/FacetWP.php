@@ -15,9 +15,45 @@ use GeneroWP\Llms\Markdown\Dom;
  */
 class FacetWP
 {
+    /**
+     * A markdown page lists up to this many results of a FacetWP listing.
+     */
+    public const PER_PAGE = 100;
+
     public static function isActive(): bool
     {
         return function_exists('FWP');
+    }
+
+    /**
+     * From here on, see expandListing(). Not before wp_loaded: FacetWP builds
+     * FWP()->request on init, and queries run before it -- ACF loading its
+     * post types, say -- are not its listing.
+     */
+    public static function expandListings(): void
+    {
+        add_action('pre_get_posts', [self::class, 'expandListing']);
+    }
+
+    /**
+     * On a markdown request, a listing of up to PER_PAGE results comes on one
+     * page, so a reader has all of it in one fetch instead of following a
+     * pager; a longer one is paged in pages that size.
+     *
+     * Before FacetWP's own pre_get_posts (999) captures the query, so the
+     * result count and pager it renders follow.
+     */
+    public static function expandListing(\WP_Query $query): void
+    {
+        if (! self::isActive() || ! FWP()->request->is_main_query($query)) {
+            return;
+        }
+
+        $perPage = (int) ($query->get('posts_per_page') ?: get_option('posts_per_page'));
+
+        if ($perPage > 0 && $perPage < self::PER_PAGE) {
+            $query->set('posts_per_page', self::PER_PAGE);
+        }
     }
 
     /**
@@ -115,6 +151,10 @@ class FacetWP
      */
     protected static function pages(string $base, int $total): array
     {
+        if ($total <= 1) {
+            return [];
+        }
+
         $vars = FWP()->request->url_vars;
         $links = [];
 
