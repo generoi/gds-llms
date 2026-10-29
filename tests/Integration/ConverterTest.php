@@ -52,7 +52,7 @@ class ConverterTest extends WP_UnitTestCase
         );
 
         $this->assertStringContainsString(
-            'translations: {"sv-SE":"https://example.com/sv/om-oss/index.html.md","en-GB":"https://example.com/about/index.html.md"}',
+            'translations: {"sv-SE":"https://example.com/sv/om-oss/md/","en-GB":"https://example.com/about/md/"}',
             $markdown,
         );
     }

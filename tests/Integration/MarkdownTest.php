@@ -27,16 +27,17 @@ class MarkdownTest extends WP_UnitTestCase
     }
 
     /**
-     * The form the llms.txt proposal specifies for URLs without a file name.
+     * Extensionless, so edge caches treat it as a page rather than a file.
      */
-    public function test_url_appends_index_html_md_to_a_trailing_slash(): void
+    public function test_url_appends_md_segment_to_a_trailing_slash(): void
     {
-        $this->assertSame('https://example.com/about/index.html.md', Markdown::url('https://example.com/about/'));
+        $this->assertSame('https://example.com/about/md/', Markdown::url('https://example.com/about/'));
+        $this->assertSame('https://example.com/md/', Markdown::url('https://example.com/'));
     }
 
-    public function test_url_appends_md_without_a_trailing_slash(): void
+    public function test_url_appends_md_segment_without_a_trailing_slash(): void
     {
-        $this->assertSame('https://example.com/about.md', Markdown::url('https://example.com/about'));
+        $this->assertSame('https://example.com/about/md', Markdown::url('https://example.com/about'));
     }
 
     public function test_plain_permalinks_have_no_markdown_url(): void
@@ -49,8 +50,8 @@ class MarkdownTest extends WP_UnitTestCase
     {
         $this->assertSame('', Markdown::url('https://example.com/app/uploads/datasheet.pdf'));
         $this->assertSame('', Markdown::url('https://example.com/materials/door.SVG'));
-        $this->assertSame('https://example.com/about.html.md', Markdown::url('https://example.com/about.html'));
-        $this->assertSame('https://example.com/v1.2/index.html.md', Markdown::url('https://example.com/v1.2/'));
+        $this->assertSame('https://example.com/about.html/md', Markdown::url('https://example.com/about.html'));
+        $this->assertSame('https://example.com/v1.2/md/', Markdown::url('https://example.com/v1.2/'));
     }
 
     /**
@@ -69,17 +70,20 @@ class MarkdownTest extends WP_UnitTestCase
 
     public function test_html_path_reverses_both_forms(): void
     {
-        $this->assertSame('/about/', Markdown::htmlPath('/about/index.html.md'));
-        $this->assertSame('/', Markdown::htmlPath('/index.html.md'));
-        $this->assertSame('/about', Markdown::htmlPath('/about.md'));
+        $this->assertSame('/about/', Markdown::htmlPath('/about/md/'));
+        $this->assertSame('/', Markdown::htmlPath('/md/'));
+        $this->assertSame('/blog/page/2/', Markdown::htmlPath('/blog/page/2/md/'));
+        $this->assertSame('/about', Markdown::htmlPath('/about/md'));
+        $this->assertSame('/', Markdown::htmlPath('/md'));
         $this->assertNull(Markdown::htmlPath('/about/'));
-        $this->assertNull(Markdown::htmlPath('/.md'));
+        $this->assertNull(Markdown::htmlPath('/admd/'));
+        $this->assertNull(Markdown::htmlPath('/about/index.html.md'));
     }
 
     public function test_request_uri_is_rewritten_and_keeps_its_query_string(): void
     {
         $_SERVER['REQUEST_METHOD'] = 'GET';
-        $_SERVER['REQUEST_URI'] = '/sv/about/index.html.md?utm_source=x';
+        $_SERVER['REQUEST_URI'] = '/sv/about/md/?utm_source=x';
 
         $this->assertTrue((new Markdown)->rewriteRequestUri());
         $this->assertSame('/sv/about/?utm_source=x', $_SERVER['REQUEST_URI']);
@@ -97,7 +101,7 @@ class MarkdownTest extends WP_UnitTestCase
     public function test_post_requests_are_left_alone(): void
     {
         $_SERVER['REQUEST_METHOD'] = 'POST';
-        $_SERVER['REQUEST_URI'] = '/about/index.html.md';
+        $_SERVER['REQUEST_URI'] = '/about/md/';
 
         $this->assertFalse((new Markdown)->rewriteRequestUri());
     }
@@ -110,7 +114,7 @@ class MarkdownTest extends WP_UnitTestCase
         $output = get_echo([new Markdown, 'printAlternateLink']);
 
         $this->assertStringContainsString('rel="alternate" type="text/markdown"', $output);
-        $this->assertStringContainsString('/about/index.html.md', $output);
+        $this->assertStringContainsString('/about/md/', $output);
     }
 
     protected function goToCategory(): void
@@ -136,7 +140,7 @@ class MarkdownTest extends WP_UnitTestCase
     {
         $this->goToCategory();
 
-        $this->assertStringContainsString('/category/news/index.html.md', get_echo([new Markdown, 'printAlternateLink']));
+        $this->assertStringContainsString('/category/news/md/', get_echo([new Markdown, 'printAlternateLink']));
     }
 
     /**
@@ -152,7 +156,7 @@ class MarkdownTest extends WP_UnitTestCase
         $link = get_echo([new Markdown, 'printAlternateLink']);
         remove_filter('gds/llms/markdown_mode', $mode);
 
-        $this->assertStringContainsString('/category/news/index.html.md', $link);
+        $this->assertStringContainsString('/category/news/md/', $link);
     }
 
     public function test_password_protected_posts_have_no_markdown_in_content_mode(): void

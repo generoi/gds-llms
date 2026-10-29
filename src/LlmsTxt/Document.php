@@ -266,9 +266,9 @@ class Document
         }
 
         return sprintf(
-            /* translators: %s: URL suffix, e.g. `index.html.md` */
+            /* translators: %s: URL suffix, e.g. `md/` */
             __('Every page is also available as markdown at its URL followed by `%s`.', 'gds-llms'),
-            str_ends_with($structure, '/') ? Markdown::SUFFIX : '.md',
+            str_ends_with($structure, '/') ? Markdown::SUFFIX.'/' : '/'.Markdown::SUFFIX,
         );
     }
 
