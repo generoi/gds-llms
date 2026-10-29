@@ -1,14 +1,4 @@
 {
     "core": null,
-    "mappings": {
-        "wp-content/mu-plugins/gds-llms": ".",
-        "wp-content/mu-plugins/000-llms-loader.php": "./tests/loader.php"
-    },
-    "env": {
-        "tests": {
-            "mappings": {
-                "wp-content/mu-plugins/gds-llms": "."
-            }
-        }
-    }
+    "plugins": ["."]
 }

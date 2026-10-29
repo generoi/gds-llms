@@ -14,14 +14,13 @@ class Plugin
     }
 
     /**
-     * Deferred to muplugins_loaded so a site's own mu-plugins can register the
-     * `gds/llms*` filters regardless of the order their filenames sort in, while
-     * still running before regular plugins -- Polylang included -- read the
-     * request URI that Markdown\Endpoint rewrites.
+     * On plugins_loaded at priority 0: after every plugin file is loaded,
+     * whatever order they load in, and before Polylang's init at priority 1
+     * reads the request URI that Markdown\Endpoint rewrites.
      */
     public function __construct()
     {
-        add_action('muplugins_loaded', [$this, 'boot']);
+        add_action('plugins_loaded', [$this, 'boot'], 0);
     }
 
     public function boot(): void
@@ -33,7 +32,7 @@ class Plugin
 
         $this->booted = true;
 
-        add_filter('lang_dir_for_domain', [$this, 'languagesDir'], 10, 2);
+        add_action('init', [$this, 'loadTextdomain'], 0);
 
         (new LlmsTxt\Endpoint)->register();
         (new Markdown\Endpoint)->register();
@@ -41,14 +40,11 @@ class Plugin
     }
 
     /**
-     * The bundled translations, for WordPress' just-in-time loading -- which
-     * switch_to_locale() also goes through. An mu-plugin installed by Composer
-     * has no directory load_plugin_textdomain() can be relative to, so the
-     * path is supplied here, and only when the site has no translation of its
-     * own in languages/plugins/.
+     * The bundled translations, loaded just in time -- switch_to_locale()
+     * included. A site's own translation in languages/plugins/ wins.
      */
-    public function languagesDir(string|false $path, string $domain): string|false
+    public function loadTextdomain(): void
     {
-        return $domain === 'gds-llms' && ! $path ? dirname(__DIR__).'/resources/lang/' : $path;
+        load_plugin_textdomain('gds-llms', false, basename(dirname(__DIR__)).'/resources/lang');
     }
 }

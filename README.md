@@ -1,6 +1,6 @@
 # gds-llms
 
-Serves `/llms.txt` and a markdown version of every page for language models. An mu-plugin with no settings: install it and both are live.
+Serves `/llms.txt` and a markdown version of every page for language models. A plugin with no settings: activate it and both are live.
 
 ## What it serves
 
@@ -79,19 +79,20 @@ Finnish and Swedish ship in `resources/lang/` (text domain `gds-llms`); a site's
 After changing a string:
 
 ```bash
-npx wp-env run cli wp i18n make-pot wp-content/mu-plugins/gds-llms wp-content/mu-plugins/gds-llms/resources/lang/gds-llms.pot --domain=gds-llms --include=src
+npx wp-env run cli wp i18n make-pot wp-content/plugins/gds-llms wp-content/plugins/gds-llms/resources/lang/gds-llms.pot --domain=gds-llms --include=src
 # update the .po files, then
-npx wp-env run cli wp i18n make-mo wp-content/mu-plugins/gds-llms/resources/lang
-npx wp-env run cli wp i18n make-php wp-content/mu-plugins/gds-llms/resources/lang
+npx wp-env run cli wp i18n make-mo wp-content/plugins/gds-llms/resources/lang
+npx wp-env run cli wp i18n make-php wp-content/plugins/gds-llms/resources/lang
 ```
 
 ## Installation
 
 ```bash
 composer require generoi/gds-llms
+wp plugin activate gds-llms
 ```
 
-Published on [Packagist](https://packagist.org/packages/generoi/gds-llms).
+Published on [Packagist](https://packagist.org/packages/generoi/gds-llms). Installs into `plugins/` (Composer type `wordpress-plugin`).
 
 ## Development
 
