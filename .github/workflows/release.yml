@@ -1,0 +1,11 @@
+name: Create release
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  update-satis:
+    uses: generoi/packagist/.github/workflows/update.yml@master
+    secrets:
+      token: ${{ secrets.PACKAGIST_UPDATE_PAT }}

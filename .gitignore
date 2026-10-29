@@ -1,0 +1,7 @@
+/vendor/
+/node_modules/
+composer.lock
+patches.lock.json
+.phpunit.result.cache
+/test-results/
+/playwright-report/

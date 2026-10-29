@@ -1,0 +1,18 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - src
+        - gds-llms.php
+    scanFiles:
+        - vendor/php-stubs/wordpress-seo-stubs/wordpress-seo-stubs.php
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+        - vendor/wpsyntex/polylang-stubs/polylang-stubs.php
+    ignoreErrors:
+        # sage-cachetags is optional and only touched behind class_exists();
+        # requiring it for analysis would pull all of Acorn into dev.
+        - message: '#Genero\\Sage\\CacheTags#'
+        # The Yoast stubs type YoastSEO() as an unqualified `Main`, which does not resolve.
+        - message: '#unknown class Main\.#'

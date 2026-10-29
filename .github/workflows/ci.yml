@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - run: composer install --no-interaction --prefer-dist
+
+      - name: Lint
+        run: composer lint
+
+      - name: Static analysis
+        run: composer stan
+
+  test:
+    runs-on: ubuntu-latest
+    # Bounded so a wedged wp-env start cannot hold a runner for GitHub's
+    # 360-minute default.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          coverage: none
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - run: composer install --no-interaction --prefer-dist
+      - run: npm ci --no-audit --no-fund
+
+      - name: Start WordPress
+        run: npx wp-env start
+
+      - name: PHP integration tests
+        run: npm run test:php
