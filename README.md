@@ -73,7 +73,7 @@ add_filter('gds/llms/markdown_available', fn (bool $available, mixed $object) =>
 composer require generoi/gds-llms
 ```
 
-Requires the Genero Satis repository (`https://generoi.github.io/packagist`) in the project's `composer.json`.
+Published on [Packagist](https://packagist.org/packages/generoi/gds-llms).
 
 ## Development
 
@@ -92,4 +92,4 @@ composer stan
 gh release create vX.Y.Z --title "vX.Y.Z" --notes "..."
 ```
 
-Publishing the release triggers `.github/workflows/release.yml`, which rebuilds the Satis index.
+Packagist picks up the new tag through its GitHub hook.
