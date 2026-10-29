@@ -13,6 +13,8 @@ Serves `/llms.txt` and a markdown version of every page for language models. An 
 
 Either way the markdown is answered after every `template_redirect` hook, so a login wall that redirects there stops it as it stops the page. Conversion follows screen-reader semantics: `aria-hidden` content and `alt=""` images are dropped, accordion questions and tab names kept, forms described by their field labels, iframes turned into links.
 
+The output follows Cloudflare's [Markdown for Agents](https://developers.cloudflare.com/fundamentals/reference/markdown-for-agents/) layout: YAML frontmatter (`title`, `description`, `image`, `url`, `language`, `modified` -- only those the page has), the content, then the page's JSON-LD in a fenced `json` block, with an `X-Markdown-Tokens` estimate header. In `content` mode the metadata and schema come from Yoast where it is active.
+
 Both responses carry `X-Robots-Tag: noindex`. With [sage-cachetags](https://github.com/generoi/sage-cachetags) installed they also carry surrogate keys, so the CDN is purged when the content changes; without it they are cached like any other page.
 
 Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carousels) has no HTML to convert, so it is missing from the markdown.

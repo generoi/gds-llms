@@ -149,7 +149,9 @@ class MarkdownTest extends WP_UnitTestCase
 
         $markdown = (new Markdown)->renderContent($post);
 
-        $this->assertStringStartsWith("# Pumps & valves\n\n## Hello", $markdown);
+        $this->assertStringContainsString("---\n\n# Pumps & valves\n\n## Hello", $markdown);
+        $this->assertStringContainsString('url: "'.get_permalink($post).'"', $markdown);
+        $this->assertMatchesRegularExpression('/^modified: "\d{4}-\d\d-\d\dT/m', $markdown);
         $this->assertStringContainsString('[link]('.home_url('/x/').')', $markdown);
     }
 
@@ -165,7 +167,7 @@ class MarkdownTest extends WP_UnitTestCase
         $markdown = (new Markdown)->renderContent($post);
         remove_filter('gds/llms/markdown_content', $filter);
 
-        $this->assertStringStartsWith("# Pump\n\nPrice: **129 €**\n\nBody", $markdown);
+        $this->assertStringContainsString("---\n\n# Pump\n\nPrice: **129 €**\n\nBody", $markdown);
     }
 
     /**

@@ -206,9 +206,11 @@ class Markdown
                 throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
             }
 
+            $markdown = $this->renderContent($post);
             $this->sendHeaders();
+            $this->sendTokenEstimate($markdown);
             CacheTags::send(fn () => CoreTags::posts([$post]), self::url($this->pageUrl()));
-            echo $this->renderContent($post);
+            echo $markdown;
             exit;
         }
 
@@ -237,10 +239,12 @@ class Markdown
             return $this->buffer;
         }
 
+        $markdown = (new Converter($this->pageUrl()))->page($this->buffer);
         $this->sendHeaders();
+        $this->sendTokenEstimate($markdown);
         CacheTags::saveUrl(self::url($this->pageUrl()));
 
-        return (new Converter($this->pageUrl()))->page($this->buffer);
+        return $markdown;
     }
 
     /**
@@ -263,12 +267,77 @@ class Markdown
         $content = (string) apply_filters('gds/llms/markdown_content', $content, $post);
 
         $html = sprintf(
-            '<html><head><title>%s</title></head><body><main>%s</main></body></html>',
-            esc_html(get_the_title($post)),
+            '<html lang="%s"><head>%s</head><body><main>%s</main></body></html>',
+            esc_attr(get_bloginfo('language')),
+            $this->contentHead($post),
             $content
         );
 
         return (new Converter((string) get_permalink($post)))->page($html);
+    }
+
+    /**
+     * The metadata a page's `<head>` would carry, for the frontmatter and
+     * JSON-LD of content mode, which renders no template: Yoast's where it is
+     * active, otherwise the post's own excerpt and featured image.
+     */
+    protected function contentHead(WP_Post $post): string
+    {
+        $description = has_excerpt($post) ? get_the_excerpt($post) : '';
+        $image = (string) get_the_post_thumbnail_url($post, 'full');
+        $schema = [];
+
+        if (function_exists('YoastSEO') && ($meta = YoastSEO()->meta->for_post($post->ID))) {
+            $description = $meta->description ?: $description;
+            $image = $meta->open_graph_images ? (string) (reset($meta->open_graph_images)['url'] ?? $image) : $image;
+            $schema = $meta->schema;
+        }
+
+        $head = sprintf('<title>%s</title>', esc_html(get_the_title($post)));
+        $head .= sprintf('<link rel="canonical" href="%s">', esc_url((string) get_permalink($post)));
+        $head .= sprintf('<meta property="article:modified_time" content="%s">', esc_attr((string) get_post_modified_time('c', true, $post)));
+
+        if ($description !== '') {
+            $head .= sprintf('<meta name="description" content="%s">', esc_attr(Format::text($description)));
+        }
+        if ($image !== '') {
+            $head .= sprintf('<meta property="og:image" content="%s">', esc_url($image));
+        }
+        if (function_exists('wc_get_product') && $post->post_type === 'product' && ($product = wc_get_product($post))) {
+            $head .= $this->productMeta($product);
+        }
+        if ($schema) {
+            $head .= '<script type="application/ld+json">'.wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG).'</script>';
+        }
+
+        return $head;
+    }
+
+    /**
+     * Open Graph's product tags for a WooCommerce product: the price the shop
+     * displays (with or without tax, as it is set up), its currency, stock
+     * status and SKU. A product with no price -- sold on quote -- has none.
+     */
+    protected function productMeta(\WC_Product $product): string
+    {
+        $tags = [
+            'product:price:amount' => $product->get_price() === '' ? '' : wc_format_decimal(wc_get_price_to_display($product), wc_get_price_decimals()),
+            'product:price:currency' => $product->get_price() === '' ? '' : get_woocommerce_currency(),
+            'product:availability' => match ($product->get_stock_status()) {
+                'instock' => 'in stock',
+                'outofstock' => 'out of stock',
+                'onbackorder' => 'available for order',
+                default => '',
+            },
+            'product:retailer_item_id' => $product->get_sku(),
+        ];
+
+        $head = '';
+        foreach (array_filter($tags, fn ($value) => $value !== '') as $property => $value) {
+            $head .= sprintf('<meta property="%s" content="%s">', esc_attr($property), esc_attr((string) $value));
+        }
+
+        return $head;
     }
 
     protected function sendHeaders(): void
@@ -279,6 +348,15 @@ class Markdown
         header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
         header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($this->pageUrl())));
+    }
+
+    /**
+     * Cloudflare's estimate of what the response costs a model to read, which
+     * agents can use to decide whether to fetch it in full.
+     */
+    protected function sendTokenEstimate(string $markdown): void
+    {
+        header(sprintf('X-Markdown-Tokens: %d', (int) ceil(mb_strlen($markdown) / 4)));
     }
 
     protected function isHtmlResponse(): bool
