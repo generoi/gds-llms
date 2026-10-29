@@ -329,15 +329,34 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('## Optional', $body);
     }
 
-    public function test_body_is_cached_until_content_changes(): void
+    public function test_publishing_content_flushes(): void
+    {
+        $this->assertTrue($this->flushesAfter(fn () => self::factory()->post->create()));
+    }
+
+    public function test_the_inputs_held_in_options_flush(): void
+    {
+        $this->assertTrue($this->flushesAfter(fn () => update_option('blogname', 'Renamed')));
+        $this->assertTrue($this->flushesAfter(fn () => set_theme_mod('nav_menu_locations', ['primary_navigation' => wp_create_nav_menu('Main')])));
+        $this->assertFalse($this->flushesAfter(fn () => update_option('posts_per_page', 3)));
+    }
+
+    /**
+     * A product import saves thousands of posts per batch; the deletes happen
+     * once, on shutdown.
+     */
+    public function test_changes_are_flushed_once_on_shutdown(): void
     {
         $llmsTxt = new LlmsTxt;
+        $llmsTxt->flushPending();
         $first = $llmsTxt->body('');
 
         update_option('blogname', 'Renamed');
-        $this->assertSame($first, $llmsTxt->body(''));
+        self::factory()->post->create_many(3);
 
-        self::factory()->post->create();
+        $this->assertSame($first, $llmsTxt->body(''), 'Nothing is deleted before shutdown.');
+
+        $llmsTxt->flushPending();
         $this->assertStringStartsWith('# Renamed', $llmsTxt->body(''));
     }
 
@@ -360,13 +379,13 @@ class LlmsTxtTest extends WP_UnitTestCase
     public function test_revisions_do_not_flush(): void
     {
         $post = self::factory()->post->create();
-        $llmsTxt = new LlmsTxt;
-        $first = $llmsTxt->body('');
-        update_option('blogname', 'Renamed');
 
-        wp_insert_post(['post_type' => 'revision', 'post_status' => 'inherit', 'post_parent' => $post, 'post_name' => $post.'-revision-v1']);
-
-        $this->assertSame($first, $llmsTxt->body(''));
+        $this->assertFalse($this->flushesAfter(fn () => wp_insert_post([
+            'post_type' => 'revision',
+            'post_status' => 'inherit',
+            'post_parent' => $post,
+            'post_name' => $post.'-revision-v1',
+        ])));
     }
 
     /**
@@ -375,25 +394,15 @@ class LlmsTxtTest extends WP_UnitTestCase
     public function test_non_public_posts_do_not_flush(): void
     {
         register_post_type('order_like', ['public' => false]);
-        $llmsTxt = new LlmsTxt;
-        $first = $llmsTxt->body('');
-        update_option('blogname', 'Renamed');
-
-        self::factory()->post->create(['post_type' => 'order_like']);
+        $flushed = $this->flushesAfter(fn () => self::factory()->post->create(['post_type' => 'order_like']));
         unregister_post_type('order_like');
 
-        $this->assertSame($first, $llmsTxt->body(''));
+        $this->assertFalse($flushed);
     }
 
     public function test_terms_outside_the_catalogue_do_not_flush(): void
     {
-        $llmsTxt = new LlmsTxt;
-        $first = $llmsTxt->body('');
-        update_option('blogname', 'Renamed');
-
-        self::factory()->term->create(['taxonomy' => 'post_tag']);
-
-        $this->assertSame($first, $llmsTxt->body(''));
+        $this->assertFalse($this->flushesAfter(fn () => self::factory()->term->create(['taxonomy' => 'post_tag'])));
     }
 
     /**
@@ -419,6 +428,32 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->go_to(home_url('/llms.txt'));
 
         $this->assertSame('1', get_query_var(LlmsTxt::QUERY_VAR));
+    }
+
+    /**
+     * Whether $change drops the cached document, once the shutdown flush runs.
+     *
+     * The document filter is not a hooked input, so a body that picks up the
+     * marker it adds can only have been rebuilt.
+     */
+    protected function flushesAfter(callable $change): bool
+    {
+        $llmsTxt = new LlmsTxt;
+        // Start clean: no flush left pending, and no body cached by an earlier
+        // call -- including the marked one this helper itself leaves behind.
+        $llmsTxt->flushPending();
+        $llmsTxt->flushCache();
+        $llmsTxt->body('');
+
+        $change();
+
+        $marker = fn (array $document) => ['title' => 'Rebuilt'] + $document;
+        add_filter('gds/llms_txt/document', $marker);
+        $llmsTxt->flushPending();
+        $rebuilt = str_starts_with($llmsTxt->body(''), '# Rebuilt');
+        remove_filter('gds/llms_txt/document', $marker);
+
+        return $rebuilt;
     }
 
     protected function customItem(int $menu, string $title, string $url, int $parent = 0): int

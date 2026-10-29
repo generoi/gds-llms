@@ -40,11 +40,30 @@ class LlmsTxt
 
     public const CACHE_KEY = 'gds_llms_txt';
 
-    public const CACHE_TTL = 12 * HOUR_IN_SECONDS;
-
-    public const GENERATION_OPTION = 'gds_llms_txt_generation';
+    /**
+     * Every input is hooked (see register()), so this only bounds how long an
+     * unhooked change -- a plugin rewriting a menu item's URL on the fly, say --
+     * can survive. Finite on purpose: a transient without an expiry is
+     * autoloaded into every page view, one body per language.
+     */
+    public const CACHE_TTL = WEEK_IN_SECONDS;
 
     public const MAX_LISTED = 100;
+
+    /**
+     * Options the document is built from; changing one flushes it.
+     */
+    public const OPTIONS = [
+        'blogname',
+        'blogdescription',
+        'show_on_front',
+        'page_on_front',
+        'permalink_structure',
+        'polylang',
+        'woocommerce_currency',
+        'woocommerce_prices_include_tax',
+        'default_product_cat',
+    ];
 
     /**
      * Posts the document being built was derived from, for its cache tags.
@@ -52,6 +71,12 @@ class LlmsTxt
      * @var int[]
      */
     protected array $posts = [];
+
+    /**
+     * Whether something this request changed requires a flush on shutdown.
+     * Static because the hooks are bound to the instance Plugin creates.
+     */
+    protected static bool $pendingFlush = false;
 
     public function register(): void
     {
@@ -66,7 +91,12 @@ class LlmsTxt
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
         add_action('saved_term', [$this, 'flushForTerm'], 10, 3);
         add_action('delete_term', [$this, 'flushForTerm'], 10, 3);
-        add_action('wp_update_nav_menu', [$this, 'flushCache']);
+        add_action('wp_update_nav_menu', [$this, 'scheduleFlush']);
+        // update_option() on an option that does not exist yet -- the first menu
+        // assigned under a new theme -- goes through add_option() instead.
+        add_action('added_option', [$this, 'flushForOption']);
+        add_action('updated_option', [$this, 'flushForOption']);
+        add_action('shutdown', [$this, 'flushPending']);
     }
 
     /**
@@ -145,6 +175,9 @@ class LlmsTxt
             CoreTags::posts($response['posts']),
             CoreTags::anyTerm($this->taxonomies()),
             array_map([CoreTags::class, 'navigation'], array_keys($this->menus())),
+            // The only two of OPTIONS sage-cachetags purges by tag; the rest are
+            // rare enough to leave to the CDN's own expiry or a deploy's flush.
+            CoreTags::option(['blogname', 'blogdescription']),
         ], $this->url($language));
 
         echo $response['body'];
@@ -186,25 +219,46 @@ class LlmsTxt
     }
 
     /**
-     * Keyed on a generation that flushCache() bumps, so a flush is one write
-     * however many languages there are, and on this file's mtime, so a deploy
-     * that changes how the document is built takes effect at once. Superseded
-     * entries are left to expire.
+     * One fixed key per language, so a flush leaves nothing behind -- a key that
+     * changed on every flush would strand a body per language per edit in
+     * wp_options until it expired. Keyed on this file's mtime too, so a deploy
+     * that changes how the document is built takes effect at once; that strands
+     * one set per deploy, which expiry clears.
      */
     protected function cacheKey(string $language): string
     {
-        return implode(':', [self::CACHE_KEY, filemtime(__FILE__), (int) get_option(self::GENERATION_OPTION), $language]);
+        return implode(':', [self::CACHE_KEY, filemtime(__FILE__), $language]);
     }
 
     /**
-     * Drop the rendered document whenever anything it is built from changes.
+     * Drop the rendered document in every language.
      *
      * A CDN in front is purged separately through cache tags; this only stops the
      * origin handing back a stale body on the fetch that follows a purge.
      */
     public function flushCache(): void
     {
-        update_option(self::GENERATION_OPTION, (int) get_option(self::GENERATION_OPTION) + 1, true);
+        foreach ($this->languages() as $language) {
+            delete_transient($this->cacheKey($language));
+        }
+    }
+
+    /**
+     * Flush once on shutdown however many changes the request made: a product
+     * import saves thousands of posts per batch, and each flush is two deletes
+     * per language.
+     */
+    public function scheduleFlush(): void
+    {
+        self::$pendingFlush = true;
+    }
+
+    public function flushPending(): void
+    {
+        if (self::$pendingFlush) {
+            self::$pendingFlush = false;
+            $this->flushCache();
+        }
     }
 
     /**
@@ -218,7 +272,7 @@ class LlmsTxt
             return;
         }
 
-        $this->flushCache();
+        $this->scheduleFlush();
     }
 
     /**
@@ -228,7 +282,18 @@ class LlmsTxt
     public function flushForTerm(int $termId, int $termTaxonomyId, string $taxonomy): void
     {
         if (in_array($taxonomy, $this->taxonomies(), true)) {
-            $this->flushCache();
+            $this->scheduleFlush();
+        }
+    }
+
+    /**
+     * The options the document reads, plus the theme mods that hold which menu
+     * is assigned to which location.
+     */
+    public function flushForOption(string $option): void
+    {
+        if (in_array($option, self::OPTIONS, true) || $option === 'theme_mods_'.get_stylesheet()) {
+            $this->scheduleFlush();
         }
     }
 
