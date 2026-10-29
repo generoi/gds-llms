@@ -4,6 +4,7 @@ namespace GeneroWP\Llms\Markdown;
 
 use Genero\Sage\CacheTags\Tags\CoreTags;
 use GeneroWP\Llms\Integrations\CacheTags;
+use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
 use WP_Post;
 
@@ -224,6 +225,7 @@ class Endpoint
         }
 
         (new PageSource)->start(function (string $html): string {
+            $html = FacetWP::fill($html, strtok($this->pageUrl(), '?') ?: $this->pageUrl());
             $markdown = (new Converter($this->pageUrl()))->page($html);
             $this->sendHeaders($markdown, $this->pageUrl());
             CacheTags::saveUrl(self::url($this->pageUrl()));
@@ -238,7 +240,9 @@ class Endpoint
      */
     public function renderContent(WP_Post $post): string
     {
-        return (new Converter((string) get_permalink($post)))->page((new ContentSource)->html($post));
+        $permalink = (string) get_permalink($post);
+
+        return (new Converter($permalink))->page(FacetWP::fill((new ContentSource)->html($post), $permalink));
     }
 
     protected function notFound(): never
