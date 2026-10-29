@@ -75,12 +75,19 @@ class LlmsTxt
             return;
         }
 
-        add_rewrite_rule('^llms\.txt$', 'index.php?'.self::QUERY_VAR.'=1', 'top');
+        // Polylang reads the language from the URL prefix on its own, so the rule
+        // only has to accept one for /fi/llms.txt to be built in Finnish.
+        $prefixes = function_exists('pll_languages_list') ? (pll_languages_list() ?: []) : [];
+        $prefix = $prefixes ? '(?:(?:'.implode('|', array_map(fn ($slug) => preg_quote($slug, '#'), $prefixes)).')/)?' : '';
+
+        add_rewrite_rule('^'.$prefix.'llms\.txt$', 'index.php?'.self::QUERY_VAR.'=1', 'top');
 
         // mu-plugins have no activation hook, so flush once per rule revision instead.
-        if (get_option(self::REWRITE_VERSION_OPTION) !== self::REWRITE_VERSION) {
+        $version = self::REWRITE_VERSION.':'.implode(',', $prefixes);
+
+        if (get_option(self::REWRITE_VERSION_OPTION) !== $version) {
             flush_rewrite_rules(false);
-            update_option(self::REWRITE_VERSION_OPTION, self::REWRITE_VERSION);
+            update_option(self::REWRITE_VERSION_OPTION, $version);
         }
     }
 
@@ -101,7 +108,9 @@ class LlmsTxt
             return;
         }
 
-        $body = $this->body($this->currentLanguage());
+        $language = $this->currentLanguage();
+        $body = $this->body($language);
+        $url = $language && function_exists('pll_home_url') ? pll_home_url($language).'llms.txt' : home_url('/llms.txt');
 
         status_header(200);
         header('Content-Type: text/plain; charset=utf-8');
@@ -111,7 +120,7 @@ class LlmsTxt
             CoreTags::archive(['page', 'post', 'product']),
             CoreTags::anyTerm($this->catalogueTaxonomies()),
             ...array_map([CoreTags::class, 'navigation'], $this->menuLocations()),
-        ), home_url('/llms.txt'));
+        ), $url);
 
         echo $body;
         exit;
@@ -227,11 +236,33 @@ class LlmsTxt
         return implode(' ', array_filter([
             (string) apply_filters('gds/llms_txt/about', '', $language),
             sprintf('Written in %s.', $this->languageName($language)),
+            $this->translationsSentence($language),
             $this->markdownSentence(),
             $this->commerceSentence(),
             $this->catalogueSentence(),
             $this->networkSentence(),
         ]));
+    }
+
+    /**
+     * The same document in the site's other languages, each built from that
+     * language's own menus.
+     */
+    protected function translationsSentence(string $language): string
+    {
+        if (! function_exists('pll_home_url')) {
+            return '';
+        }
+
+        $links = [];
+
+        foreach ($this->languages() as $other) {
+            if ($other !== '' && $other !== $language) {
+                $links[] = sprintf('[%s](%s)', $this->languageName($other), Format::linkUrl(pll_home_url($other).'llms.txt'));
+            }
+        }
+
+        return $links ? 'Also available in '.implode(', ', $links).'.' : '';
     }
 
     protected function markdownSentence(): string
