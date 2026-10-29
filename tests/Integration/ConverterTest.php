@@ -34,6 +34,29 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringContainsString("- Pumps\n- ![Valve](https://example.com/a.jpg)", $markdown);
     }
 
+    /**
+     * Polylang's hreflang links, as page mode finds them and content mode's
+     * sources print them: each other language's markdown URL, not itself, not
+     * x-default.
+     */
+    public function test_frontmatter_links_the_translations_markdown(): void
+    {
+        $markdown = $this->page(
+            '<p>Hei</p>',
+            '<title>Meistä</title>'
+            .'<link rel="alternate" hreflang="fi" href="https://example.com/fi/meista/">'
+            .'<link rel="alternate" hreflang="sv-SE" href="https://example.com/sv/om-oss/">'
+            .'<link rel="alternate" hreflang="en-GB" href="https://example.com/about/">'
+            .'<link rel="alternate" hreflang="x-default" href="https://example.com/about/">',
+            'fi',
+        );
+
+        $this->assertStringContainsString(
+            'translations: {"sv-SE":"https://example.com/sv/om-oss/index.html.md","en-GB":"https://example.com/about/index.html.md"}',
+            $markdown,
+        );
+    }
+
     public function test_frontmatter_carries_the_page_metadata(): void
     {
         $markdown = $this->page(

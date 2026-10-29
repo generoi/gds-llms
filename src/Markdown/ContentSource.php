@@ -5,6 +5,7 @@ namespace GeneroWP\Llms\Markdown;
 use Genero\Sage\CacheTags\Tags\CoreTags;
 use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Integrations\FacetWP;
+use GeneroWP\Llms\Integrations\Polylang;
 use GeneroWP\Llms\Integrations\WooCommerce;
 use GeneroWP\Llms\Integrations\Yoast;
 use WP_Post;
@@ -85,6 +86,7 @@ class ContentSource implements Source
         if ($image !== '') {
             $head .= sprintf('<meta property="og:image" content="%s">', esc_url($image));
         }
+        $head .= Polylang::alternateLinks();
         $head .= WooCommerce::productMeta($post);
         if ($schema) {
             $head .= '<script type="application/ld+json">'.wp_json_encode($schema, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG).'</script>';

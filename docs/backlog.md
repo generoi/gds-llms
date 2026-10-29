@@ -79,7 +79,7 @@ language (`switch_to_locale()` while building llms.txt and markdown).
 
 ## Markdown: link translations
 
-- [ ] Frontmatter `translations:` map, language → that translation's `.md`
+- [x] Frontmatter `translations:` map, language → that translation's `.md`
   URL (`pll_get_post_translations()`, language roots for archives), in both
   modes. Today only `language` is there; page mode's hreflang `<link>`s are
   not read, content mode's `<head>` has none. Optionally also

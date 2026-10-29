@@ -4,6 +4,7 @@ namespace GeneroWP\Llms\Markdown;
 
 use Genero\Sage\CacheTags\Tags\CoreTags;
 use GeneroWP\Llms\Format;
+use GeneroWP\Llms\Integrations\Polylang;
 use GeneroWP\Llms\Integrations\WooCommerce;
 use GeneroWP\Llms\LlmsTxt\Document;
 use WP_Post;
@@ -51,10 +52,11 @@ class ArchiveSource implements Source
         }
 
         return sprintf(
-            '<html lang="%s"><head><title>%s</title><link rel="canonical" href="%s"></head><body><main>%s</main></body></html>',
+            '<html lang="%s"><head><title>%s</title><link rel="canonical" href="%s">%s</head><body><main>%s</main></body></html>',
             esc_attr(get_bloginfo('language')),
             esc_html($title),
             esc_url($this->url),
+            Polylang::alternateLinks(),
             $main
         );
     }
