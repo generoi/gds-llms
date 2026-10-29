@@ -311,7 +311,14 @@ class LlmsTxt
             'markdown' => $this->markdownSentence(),
             'commerce' => $this->commerceSentence(),
             'catalogue' => $this->catalogueSentence(),
-            'network' => $this->networkSentence(),
+            /**
+             * Whether to list the other sites on the network.
+             *
+             * Off by default: a network is as often a set of unrelated shops,
+             * or a main site nobody visits, as it is a family of sister sites
+             * a reader would want pointed at.
+             */
+            'network' => apply_filters('gds/llms_txt/network', false) ? $this->networkSentence() : '',
         ]);
     }
 
