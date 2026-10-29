@@ -26,6 +26,7 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences keyed `language`, `translations`, `markdown`, `commerce`, `catalogue`, `network`), `links` (header links) and `sections` (`heading`, `lines`). |
 | `gds/llms_txt/network` | `false` | On a multisite, return `true` to link the network's other sites ("Related sites: …"), for sister sites a reader should know about. |
 | `gds/llms/markdown_mode` | `content` | `page` for sites whose templates draw content from post meta, or gate content behind a login form in the template. |
+| `gds/llms/markdown_content` | the rendered post content | In `content` mode, add what the template renders outside the content, such as a product's price. |
 | `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |
 
 ```php
@@ -39,7 +40,16 @@ add_filter('gds/llms_txt/document', function (array $document) {
 // Sister magazines on one network, worth pointing a reader at.
 add_filter('gds/llms_txt/network', '__return_true');
 
-// Recipes whose ingredients the template renders from post meta.
+// Product price and short description, which the theme's template renders.
+add_filter('gds/llms/markdown_content', function (string $html, WP_Post $post) {
+    if ($post->post_type !== 'product' || ! $product = wc_get_product($post)) {
+        return $html;
+    }
+
+    return sprintf('<p>Price: %s</p>%s', $product->get_price_html(), wpautop($product->get_short_description())).$html;
+}, 10, 2);
+
+// Or render the whole page instead, template content included.
 add_filter('gds/llms/markdown_mode', fn () => 'page');
 
 // Or, staying in content mode: intranet pages are gated by their template.

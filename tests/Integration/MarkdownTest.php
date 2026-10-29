@@ -154,6 +154,21 @@ class MarkdownTest extends WP_UnitTestCase
     }
 
     /**
+     * What a template renders outside the content, added for the markdown only.
+     */
+    public function test_content_is_filterable_before_conversion(): void
+    {
+        $post = self::factory()->post->create_and_get(['post_title' => 'Pump', 'post_content' => '<p>Body</p>']);
+        $filter = fn (string $html, \WP_Post $post) => '<p>Price: <strong>129 €</strong></p>'.$html;
+
+        add_filter('gds/llms/markdown_content', $filter, 10, 2);
+        $markdown = (new Markdown)->renderContent($post);
+        remove_filter('gds/llms/markdown_content', $filter);
+
+        $this->assertStringStartsWith("# Pump\n\nPrice: **129 €**\n\nBody", $markdown);
+    }
+
+    /**
      * A page identified by its query string has no path to append to -- and
      * must not be given the front page's markdown URL either.
      */

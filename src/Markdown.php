@@ -252,6 +252,16 @@ class Markdown
         setup_postdata($post);
         $content = (string) apply_filters('the_content', get_the_content(null, false, $post));
 
+        /**
+         * The HTML converted in `content` mode, for adding what the site's
+         * template renders outside the content -- a product's price, a
+         * recipe's ingredients from post meta -- without touching the HTML page.
+         *
+         * @param  string  $content  the rendered post content
+         * @param  WP_Post  $post
+         */
+        $content = (string) apply_filters('gds/llms/markdown_content', $content, $post);
+
         $html = sprintf(
             '<html><head><title>%s</title></head><body><main>%s</main></body></html>',
             esc_html(get_the_title($post)),
