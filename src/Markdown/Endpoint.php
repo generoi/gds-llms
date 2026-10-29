@@ -237,7 +237,8 @@ class Endpoint
 
             $markdown = $this->renderContent($post);
             $this->sendHeaders($markdown, $permalink);
-            CacheTags::send(fn () => CoreTags::posts([$post]), self::url($permalink));
+            // A page standing in for an archive changes with its post type.
+            CacheTags::send(fn () => [CoreTags::posts([$post]), self::mappedPostType() ? CoreTags::archive(self::mappedPostType()) : []], self::url($permalink));
             echo $markdown;
             exit;
         }
@@ -255,26 +256,63 @@ class Endpoint
     /**
      * The post content, converted as if it were a page's main content titled
      * with the post title.
+     *
+     * A page standing in for an archive has its listing drawn by its template
+     * -- unless its content already lists, a FacetWP or Query Loop block. So
+     * the listing is built here only when the content links none of the
+     * posts it would list; otherwise it would appear twice.
      */
     public function renderContent(WP_Post $post): string
     {
         $permalink = (string) get_permalink($post);
+        $html = FacetWP::fill((new ContentSource)->html($post), $permalink);
 
-        return (new Converter($permalink))->page(FacetWP::fill((new ContentSource)->html($post), $permalink));
+        if ($postType = self::mappedPostType()) {
+            $listing = new WP_Query([
+                'post_type' => $postType,
+                'paged' => max(1, (int) get_query_var('paged')),
+                'posts_per_page' => Listings::PER_PAGE,
+            ]);
+
+            if (! self::linksAny($html, array_slice($listing->posts, 0, 5))) {
+                $html = (new ArchiveSource)->html($listing, $permalink);
+            }
+        }
+
+        return (new Converter($permalink))->page($html);
+    }
+
+    /**
+     * @param  array<int, WP_Post|int>  $posts
+     */
+    protected static function linksAny(string $html, array $posts): bool
+    {
+        foreach ($posts as $post) {
+            if (str_contains($html, 'href="'.esc_url((string) get_permalink($post)).'"')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
      * The query a content-mode listing lists, or null on a single page.
-     *
-     * A page that stands in for an archive (sage-archive-pages) stays a page:
-     * its content is what its editors built, listing included -- a FacetWP
-     * or Query Loop block -- and a second listing beside it would repeat it.
      */
     public function listingQuery(): ?WP_Query
     {
         global $wp_query;
 
         return is_singular() ? null : $wp_query;
+    }
+
+    /**
+     * The post type a page stands in for as its archive (sage-archive-pages),
+     * or '' -- the page's template lists it.
+     */
+    public static function mappedPostType(): string
+    {
+        return is_singular() ? (string) get_query_var('mapped_post_archive') : '';
     }
 
     public function renderListing(WP_Query $query, string $url): string

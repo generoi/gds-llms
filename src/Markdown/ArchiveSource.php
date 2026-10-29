@@ -9,7 +9,8 @@ use WP_Query;
 
 /**
  * `content` mode for a listing -- the blog, a category or tag, a post type
- * archive, a shop -- inside the minimal page the converter reads. No template renders, so the listing is built here:
+ * archive, a shop, a page standing in for one -- inside the minimal page the
+ * converter reads. No template renders, so the listing is built here:
  * the title and introduction, the result count, each post as a link with
  * its description (and a product's price), then the pages.
  */
@@ -19,8 +20,9 @@ class ArchiveSource
     {
         $object = get_queried_object();
 
-        // The posts page in front of the blog carries the title and
-        // introduction an editor wrote.
+        // A page in front of the listing -- the posts page, a page standing
+        // in for an archive -- carries the title and introduction an editor
+        // wrote.
         if ($object instanceof WP_Post) {
             $title = get_the_title($object);
             $intro = (string) apply_filters('the_content', $object->post_content);

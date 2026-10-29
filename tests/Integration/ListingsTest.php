@@ -117,15 +117,36 @@ class ListingsTest extends WP_UnitTestCase
     }
 
     /**
-     * A page standing in for an archive (sage-archive-pages) keeps its own
-     * content, listing block included; a second listing would repeat it.
+     * sage-archive-pages maps a page to a post type and lists it from the
+     * page's template; the markdown lists it under the page's content.
      */
-    public function test_a_page_is_not_a_listing_even_when_it_stands_in_for_one(): void
+    public function test_a_page_standing_in_for_an_archive_is_listed(): void
     {
-        $this->go_to(get_permalink(self::factory()->post->create(['post_type' => 'page'])));
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Stories', 'post_content' => '<p>What we have done.</p>']);
+        $this->posts(4);
+
+        $this->go_to(get_permalink($page));
         set_query_var('mapped_post_archive', 'post');
 
-        $this->assertNull((new Markdown)->listingQuery());
+        $this->assertNull((new Markdown)->listingQuery(), 'Still a page, not an archive.');
+        $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n4 results.", (new Markdown)->renderContent(get_post($page)));
+    }
+
+    /**
+     * Content that already lists the posts -- a FacetWP or Query Loop block --
+     * is kept as it is; a second listing would repeat it.
+     */
+    public function test_a_page_whose_content_lists_its_posts_is_kept(): void
+    {
+        $post = $this->posts(1)[0];
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_content' => '<h3><a href="'.get_permalink($post).'">Our story</a></h3>']);
+
+        $this->go_to(get_permalink($page));
+        set_query_var('mapped_post_archive', 'post');
+        $markdown = (new Markdown)->renderContent(get_post($page));
+
+        $this->assertStringContainsString('[Our story]', $markdown);
+        $this->assertStringNotContainsString('results.', $markdown);
     }
 
     public function test_search_results_have_no_markdown(): void
