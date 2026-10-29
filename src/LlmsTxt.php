@@ -125,14 +125,23 @@ class LlmsTxt
 
     public function body(string $language): string
     {
-        $body = get_transient(self::CACHE_KEY.':'.$language);
+        $body = get_transient($this->cacheKey($language));
 
         if (! is_string($body) || $body === '') {
             $body = $this->build($language);
-            set_transient(self::CACHE_KEY.':'.$language, $body, self::CACHE_TTL);
+            set_transient($this->cacheKey($language), $body, self::CACHE_TTL);
         }
 
         return $body;
+    }
+
+    /**
+     * Keyed on this file's mtime too, so a deploy that changes how the document
+     * is built does not serve the previous version's body for the rest of the TTL.
+     */
+    protected function cacheKey(string $language): string
+    {
+        return self::CACHE_KEY.':'.filemtime(__FILE__).':'.$language;
     }
 
     /**
@@ -144,7 +153,7 @@ class LlmsTxt
     public function flushCache(): void
     {
         foreach ($this->languages() as $language) {
-            delete_transient(self::CACHE_KEY.':'.$language);
+            delete_transient($this->cacheKey($language));
         }
     }
 
