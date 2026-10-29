@@ -94,6 +94,8 @@ wp plugin activate gds-llms
 
 Published on [Packagist](https://packagist.org/packages/generoi/gds-llms). Installs into `plugins/` (Composer type `wordpress-plugin`).
 
+**On Kinsta, exclude `txt` and `md` from the CDN** (MyKinsta → the site → CDN → exclude file extensions), then purge it (`wp kinsta cache purge --cdn`). Kinsta's CDN treats both extensions as static files and caches them for a year (`max-age=31536000`) whatever the response says, so `llms.txt` and every markdown page would keep serving their first version through edits and deploys. Excluded, they are cached like any other page.
+
 ## Development
 
 ```bash
