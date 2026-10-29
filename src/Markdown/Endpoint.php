@@ -9,15 +9,17 @@ use GeneroWP\Llms\Robots;
 use WP_Post;
 
 /**
- * A markdown version of every page, at the URL the llms.txt proposal
- * specifies: the page URL with `.md` appended, or `index.html.md` when the URL
- * ends in a slash.
+ * A markdown version of every page, at the page URL followed by `md/`:
+ * `/about/` → `/about/md/`, the front page at `/md/`.
  *
  * A separate URL rather than `Accept: text/markdown` negotiation, because host
  * page caches key on the URL alone -- negotiating on a header they ignore would
- * hand the cached markdown to browsers. The `index.html.md` form also sits
- * underneath the page's own path, so a host cache that purges a page as a prefix
- * (Kinsta's "group" purge does) clears the markdown along with it.
+ * hand the cached markdown to browsers. Extensionless rather than the llms.txt
+ * proposal's `index.html.md`: edge caches route anything with a file extension
+ * as a static file -- Kinsta's skips it, its CDN keeps it a year. It also sits
+ * underneath the page's own path, so a host cache that purges a page as a
+ * prefix (Kinsta's "group" purge does) clears the markdown along with it. A
+ * page whose own slug is `md` is shadowed by its parent's markdown.
  *
  * Two ways to produce it, chosen per site with `gds/llms/markdown_mode`:
  *
@@ -36,7 +38,7 @@ use WP_Post;
  */
 class Endpoint
 {
-    public const SUFFIX = 'index.html.md';
+    public const SUFFIX = 'md';
 
     public const MODE_CONTENT = 'content';
 
@@ -59,8 +61,8 @@ class Endpoint
         $this->requested = $this->rewriteRequestUri();
 
         if ($this->requested) {
-            // `/about.md` is rewritten to `/about`, which canonical redirect
-            // would bounce to `/about/` -- the HTML page.
+            // On a site without trailing slashes `/about/md` is rewritten to
+            // `/about`; canonical redirect must not bounce it to the HTML page.
             add_filter('redirect_canonical', '__return_false');
             add_action('wp_loaded', [$this->listings, 'register']);
             // Last, so every gate on template_redirect has had its say.
@@ -82,7 +84,7 @@ class Endpoint
             return '';
         }
 
-        return str_ends_with($url, '/') ? $url.self::SUFFIX : $url.'.md';
+        return str_ends_with($url, '/') ? $url.self::SUFFIX.'/' : $url.'/'.self::SUFFIX;
     }
 
     /**
@@ -105,12 +107,12 @@ class Endpoint
      */
     public static function htmlPath(string $path): ?string
     {
-        if (str_ends_with($path, '/'.self::SUFFIX)) {
-            return substr($path, 0, -strlen(self::SUFFIX));
-        }
-
-        if (str_ends_with($path, '.md') && strlen($path) > strlen('/.md')) {
-            return substr($path, 0, -strlen('.md'));
+        // `/about/md/` stands for `/about/`; `/about/md`, on a site without
+        // trailing slashes, for `/about`.
+        foreach (['/'.self::SUFFIX.'/' => '/', '/'.self::SUFFIX => ''] as $suffix => $keep) {
+            if (str_ends_with($path, $suffix)) {
+                return substr($path, 0, -strlen($suffix)).$keep ?: '/';
+            }
         }
 
         return null;

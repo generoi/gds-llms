@@ -71,7 +71,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         $body = (new Document)->build('');
 
         $this->assertStringContainsString('Written in English (United States).', $body);
-        $this->assertStringContainsString('followed by `index.html.md`', $body);
+        $this->assertStringContainsString('followed by `md/`', $body);
     }
 
     public function test_the_default_tagline_is_not_a_summary(): void
@@ -385,7 +385,7 @@ class LlmsTxtTest extends WP_UnitTestCase
         remove_filter('gds/llms_txt/document', $filter);
 
         $this->assertStringContainsString("\nAcme sells pumps. Written in English", $body);
-        $this->assertStringNotContainsString('index.html.md', $body);
+        $this->assertStringNotContainsString('followed by `md/`', $body);
         $this->assertStringNotContainsString('## Optional', $body);
     }
 
