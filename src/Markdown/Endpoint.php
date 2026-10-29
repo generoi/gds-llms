@@ -276,7 +276,7 @@ class Endpoint
     {
         status_header(404);
         header('Content-Type: text/plain; charset=utf-8');
-        echo "Not found\n";
+        echo __('Page not found')."\n";
         exit;
     }
 

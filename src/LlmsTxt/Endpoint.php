@@ -227,13 +227,19 @@ class Endpoint
     }
 
     /**
-     * The newest modification time among the files the document is built by.
+     * The newest modification time among the files the document is built by,
+     * its bundled translations included.
      */
     protected static function codeVersion(): int
     {
         if (self::$codeVersion === null) {
             $src = dirname(__DIR__);
-            $files = [...(glob(__DIR__.'/*.php') ?: []), ...(glob($src.'/Integrations/*.php') ?: []), $src.'/Format.php'];
+            $files = [
+                ...(glob(__DIR__.'/*.php') ?: []),
+                ...(glob($src.'/Integrations/*.php') ?: []),
+                ...(glob(dirname($src).'/resources/lang/*') ?: []),
+                $src.'/Format.php',
+            ];
             self::$codeVersion = max(array_map(fn (string $file) => (int) filemtime($file), $files));
         }
 

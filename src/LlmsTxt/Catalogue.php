@@ -105,15 +105,16 @@ class Catalogue
             return '';
         }
 
-        $last = array_pop($links);
         // What the trees hold: WooCommerce products by default, a site's own
         // product post type when it lists its own taxonomy.
         $count = array_sum(array_map(fn (string $type) => (int) (wp_count_posts($type)->publish ?? 0), array_unique($types)));
 
         return sprintf(
-            'The %s products are organised under %s.',
+            /* translators: 1: number of products, 2: list of category links */
+            _n('The %1$s product is organised under %2$s.', 'The %1$s products are organised under %2$s.', $count, 'gds-llms'),
             number_format_i18n($count),
-            $links ? implode(', ', $links).' and '.$last : $last,
+            // Core's translated list separators: "a, b, and c".
+            wp_sprintf('%l', $links),
         );
     }
 

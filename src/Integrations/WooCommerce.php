@@ -18,9 +18,12 @@ class WooCommerce
         }
 
         return sprintf(
-            'Products can be bought online. Prices are in %s and %s VAT.',
+            wc_prices_include_tax()
+                /* translators: %s: currency code, e.g. EUR */
+                ? __('Products can be bought online. Prices are in %s and include VAT.', 'gds-llms')
+                /* translators: %s: currency code, e.g. EUR */
+                : __('Products can be bought online. Prices are in %s and exclude VAT.', 'gds-llms'),
             get_woocommerce_currency(),
-            wc_prices_include_tax() ? 'include' : 'exclude',
         );
     }
 

@@ -47,7 +47,25 @@ class Document
         $this->catalogue = new Catalogue;
     }
 
+    /**
+     * Built in the language's own locale, so /sv/llms.txt reads Swedish
+     * whichever request builds it -- a flush followed by a Finnish visitor's
+     * fetch, a test, a cache warm-up.
+     */
     public function build(string $language): string
+    {
+        $switched = switch_to_locale(Polylang::locale($language));
+
+        try {
+            return $this->buildInLocale($language);
+        } finally {
+            if ($switched) {
+                restore_previous_locale();
+            }
+        }
+    }
+
+    protected function buildInLocale(string $language): string
     {
         /**
          * The whole document before it is rendered, for anything a site needs
@@ -204,7 +222,8 @@ class Document
     protected function intro(string $language): array
     {
         return array_filter([
-            'language' => sprintf('Written in %s.', Polylang::languageName($language)),
+            /* translators: %s: language name */
+            'language' => sprintf(__('Written in %s.', 'gds-llms'), Polylang::languageName($language)),
             'translations' => $this->translationsSentence($language),
             'markdown' => $this->markdownSentence(),
             'commerce' => WooCommerce::commerceSentence(),
@@ -234,7 +253,8 @@ class Document
             }
         }
 
-        return $links ? 'Also available in '.implode(', ', $links).'.' : '';
+        /* translators: %s: list of language links */
+        return $links ? sprintf(__('Also available in %s.', 'gds-llms'), wp_sprintf('%l', $links)) : '';
     }
 
     protected function markdownSentence(): string
@@ -246,7 +266,8 @@ class Document
         }
 
         return sprintf(
-            'Every page is also available as markdown at its URL followed by `%s`.',
+            /* translators: %s: URL suffix, e.g. `index.html.md` */
+            __('Every page is also available as markdown at its URL followed by `%s`.', 'gds-llms'),
             str_ends_with($structure, '/') ? Markdown::SUFFIX : '.md',
         );
     }
@@ -283,20 +304,18 @@ class Document
 
             $locale = (string) get_blog_option($blogId, 'WPLANG');
 
-            $links[] = sprintf(
-                '[%s](%s)%s',
-                Format::linkLabel($name),
-                Format::linkUrl(get_home_url($blogId)),
-                $locale ? ' in '.Polylang::languageName($locale) : '',
-            );
+            $link = sprintf('[%s](%s)', Format::linkLabel($name), Format::linkUrl(get_home_url($blogId)));
+            /* translators: 1: site link, 2: language name */
+            $links[] = $locale ? sprintf(__('%1$s in %2$s', 'gds-llms'), $link, Polylang::languageName($locale)) : $link;
         }
 
-        return $links ? 'Related sites: '.implode(', ', $links).'.' : '';
+        /* translators: %s: list of site links */
+        return $links ? sprintf(__('Related sites: %s.', 'gds-llms'), wp_sprintf('%l', $links)) : '';
     }
 
     /**
-     * Where the exhaustive lists live. English throughout because the `Optional`
-     * heading is fixed by the llms.txt format.
+     * Where the exhaustive lists live. The `Optional` heading stays English: the
+     * llms.txt format gives that word its meaning.
      *
      * @return Section[]
      */
@@ -306,7 +325,7 @@ class Document
 
         return $url ? [[
             'heading' => 'Optional',
-            'lines' => [Format::linkLine('Sitemap', $url, 'Every indexable URL, split by content type.')],
+            'lines' => [Format::linkLine(__('Sitemap', 'gds-llms'), $url, __('Every indexable URL, split by content type.', 'gds-llms'))],
         ]] : [];
     }
 
