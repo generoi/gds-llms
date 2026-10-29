@@ -2,8 +2,6 @@
 
 namespace GeneroWP\Llms;
 
-use WP_Error;
-
 class Format
 {
     /**
@@ -23,7 +21,7 @@ class Format
         return '## '.self::text($heading)."\n".implode("\n", $lines)."\n";
     }
 
-    public static function linkLine(string $label, string|WP_Error|false $url, string $description = ''): string
+    public static function linkLine(string $label, string $url, string $description = ''): string
     {
         $line = sprintf('- [%s](%s)', self::linkLabel($label), self::linkUrl($url));
 
@@ -44,9 +42,28 @@ class Format
     {
         $value = wp_strip_all_tags((string) $value);
         $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        $value = preg_replace('/[\s\x{00A0}\x{200B}\x{FEFF}]+/u', ' ', $value);
 
-        return trim((string) $value);
+        return trim(self::replace('/[\s\x{00A0}\x{200B}\x{FEFF}]+/u', ' ', $value));
+    }
+
+    /**
+     * preg_replace() for UTF-8 text that fails loudly.
+     *
+     * With the `u` modifier preg_replace() returns null for a subject with an
+     * invalid byte sequence, which a string cast would turn into a silently empty
+     * title or page. Invalid sequences are stripped first, as WordPress does
+     * before output; any failure left after that is the regex engine's own and
+     * is thrown.
+     */
+    public static function replace(string $pattern, string $replacement, string $subject): string
+    {
+        $result = preg_replace($pattern, $replacement, wp_check_invalid_utf8($subject, true));
+
+        if ($result === null) {
+            throw new \RuntimeException(sprintf('preg_replace(%s) failed: %s', $pattern, preg_last_error_msg()));
+        }
+
+        return $result;
     }
 
     /**
@@ -57,12 +74,8 @@ class Format
         return str_replace(['[', ']'], ['\[', '\]'], self::text($value));
     }
 
-    public static function linkUrl(string|WP_Error|false $url): string
+    public static function linkUrl(string $url): string
     {
-        if (is_wp_error($url) || ! $url) {
-            return '';
-        }
-
         return str_replace([' ', '(', ')'], ['%20', '%28', '%29'], esc_url_raw($url));
     }
 

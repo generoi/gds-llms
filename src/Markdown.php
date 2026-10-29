@@ -195,11 +195,13 @@ class Markdown
             setup_postdata($previous);
         }
 
+        // DOMDocument silently drops a whole element containing an invalid byte sequence.
+        $html = wp_check_invalid_utf8($html, true);
         // The converter leaves entities encoded, so `&amp;` would reach the reader verbatim.
         $markdown = html_entity_decode($this->converter()->convert($html), ENT_QUOTES | ENT_HTML5, 'UTF-8');
         // Spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing but whitespace.
-        $markdown = (string) preg_replace('/^[\h\x{00A0}]+$/mu', '', $markdown);
-        $markdown = trim((string) preg_replace("/\n{3,}/", "\n\n", $markdown));
+        $markdown = Format::replace('/^[\h\x{00A0}]+$/mu', '', $markdown);
+        $markdown = trim(Format::replace("/\n{3,}/", "\n\n", $markdown));
 
         return '# '.Format::text(get_the_title($post))."\n\n".($markdown ? $markdown."\n" : '');
     }

@@ -42,19 +42,31 @@ class LlmsTxt
 
     public const CACHE_TTL = 12 * HOUR_IN_SECONDS;
 
+    public const GENERATION_OPTION = 'gds_llms_txt_generation';
+
     public const MAX_LISTED = 100;
+
+    /**
+     * Posts the document being built was derived from, for its cache tags.
+     *
+     * @var int[]
+     */
+    protected array $posts = [];
 
     public function register(): void
     {
         // After Rank Math's own init:10 registration, so handledElsewhere() can see it.
         add_action('init', [$this, 'addRewriteRule'], 20);
+        add_action('wp_loaded', [$this, 'maybeFlushRewriteRules']);
         add_filter('query_vars', [$this, 'addQueryVar']);
         add_action('template_redirect', [$this, 'maybeSend'], 0);
         add_action('admin_init', [$this, 'disableYoast']);
 
-        foreach (['save_post', 'deleted_post', 'saved_term', 'delete_term', 'wp_update_nav_menu'] as $hook) {
-            add_action($hook, [$this, 'flushCache']);
-        }
+        add_action('save_post', [$this, 'flushForPost'], 10, 2);
+        add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
+        add_action('saved_term', [$this, 'flushForTerm'], 10, 3);
+        add_action('delete_term', [$this, 'flushForTerm'], 10, 3);
+        add_action('wp_update_nav_menu', [$this, 'flushCache']);
     }
 
     /**
@@ -79,8 +91,23 @@ class LlmsTxt
         $prefix = $prefixes ? '(?:(?:'.implode('|', array_map(fn ($slug) => preg_quote($slug, '#'), $prefixes)).')/)?' : '';
 
         add_rewrite_rule('^'.$prefix.'llms\.txt$', 'index.php?'.self::QUERY_VAR.'=1', 'top');
+    }
 
-        // mu-plugins have no activation hook, so flush once per rule revision instead.
+    /**
+     * mu-plugins have no activation hook, so flush once per rule revision instead.
+     *
+     * On wp_loaded rather than alongside add_rewrite_rule() on init: a flush
+     * regenerates every rule from what has been registered so far, so flushing
+     * mid-init would drop the rules of any plugin that registers later on init
+     * until something flushed again.
+     */
+    public function maybeFlushRewriteRules(): void
+    {
+        if ($this->handledElsewhere()) {
+            return;
+        }
+
+        $prefixes = function_exists('pll_languages_list') ? (pll_languages_list() ?: []) : [];
         $version = self::REWRITE_VERSION.':'.implode(',', $prefixes);
 
         if (get_option(self::REWRITE_VERSION_OPTION) !== $version) {
@@ -107,53 +134,101 @@ class LlmsTxt
         }
 
         $language = $this->currentLanguage();
-        $body = $this->body($language);
+        $response = $this->response($language);
 
         status_header(200);
         header('Content-Type: text/plain; charset=utf-8');
+        header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
 
-        CacheTags::send(fn () => array_merge(
-            CoreTags::archive(['page', 'post', 'product']),
+        CacheTags::send(fn () => [
+            CoreTags::posts($response['posts']),
             CoreTags::anyTerm($this->taxonomies()),
-            ...array_map([CoreTags::class, 'navigation'], array_keys($this->menus())),
-        ), $this->url($language));
+            array_map([CoreTags::class, 'navigation'], array_keys($this->menus())),
+        ], $this->url($language));
 
-        echo $body;
+        echo $response['body'];
         exit;
     }
 
     public function body(string $language): string
     {
-        $body = get_transient($this->cacheKey($language));
-
-        if (! is_string($body) || $body === '') {
-            $body = $this->build($language);
-            set_transient($this->cacheKey($language), $body, self::CACHE_TTL);
-        }
-
-        return $body;
+        return $this->response($language)['body'];
     }
 
     /**
-     * Keyed on this file's mtime too, so a deploy that changes how the document
-     * is built does not serve the previous version's body for the rest of the TTL.
+     * The document and the posts it was built from, cached for anonymous
+     * visitors.
+     *
+     * A logged-in request is built fresh and never stored: menus can carry items
+     * only some users see -- private pages, items a menu-visibility plugin
+     * restricts by role -- and caching an editor's view would publish it.
+     *
+     * @return array{body: string, posts: int[]}
+     */
+    public function response(string $language): array
+    {
+        $key = $this->cacheKey($language);
+        $cached = is_user_logged_in() ? false : get_transient($key);
+
+        if (is_array($cached) && isset($cached['body'], $cached['posts'])) {
+            return $cached;
+        }
+
+        $this->posts = [];
+        $response = ['body' => $this->build($language), 'posts' => array_values(array_unique($this->posts))];
+
+        if (! is_user_logged_in()) {
+            set_transient($key, $response, self::CACHE_TTL);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Keyed on a generation that flushCache() bumps, so a flush is one write
+     * however many languages there are, and on this file's mtime, so a deploy
+     * that changes how the document is built takes effect at once. Superseded
+     * entries are left to expire.
      */
     protected function cacheKey(string $language): string
     {
-        return self::CACHE_KEY.':'.filemtime(__FILE__).':'.$language;
+        return implode(':', [self::CACHE_KEY, filemtime(__FILE__), (int) get_option(self::GENERATION_OPTION), $language]);
     }
 
     /**
-     * Drop the rendered body whenever anything it is built from changes.
+     * Drop the rendered document whenever anything it is built from changes.
      *
      * A CDN in front is purged separately through cache tags; this only stops the
      * origin handing back a stale body on the fetch that follows a purge.
      */
     public function flushCache(): void
     {
-        foreach ($this->languages() as $language) {
-            delete_transient($this->cacheKey($language));
+        update_option(self::GENERATION_OPTION, (int) get_option(self::GENERATION_OPTION) + 1, true);
+    }
+
+    /**
+     * Only content that can appear in the document: not revisions, autosaves
+     * (every minute while someone edits) or orders and other non-public types,
+     * which would otherwise flush it on every checkout.
+     */
+    public function flushForPost(int $postId, ?\WP_Post $post = null): void
+    {
+        if (! $post || wp_is_post_revision($post) || wp_is_post_autosave($post) || ! is_post_type_viewable($post->post_type)) {
+            return;
+        }
+
+        $this->flushCache();
+    }
+
+    /**
+     * Only the catalogue taxonomies; menus are flushed by wp_update_nav_menu, and
+     * a product import creating thousands of attribute terms should not flush.
+     */
+    public function flushForTerm(int $termId, int $termTaxonomyId, string $taxonomy): void
+    {
+        if (in_array($taxonomy, $this->taxonomies(), true)) {
+            $this->flushCache();
         }
     }
 
@@ -394,7 +469,8 @@ class LlmsTxt
 
         foreach ($this->taxonomies() as $taxonomy) {
             if ($page = $this->taxonomyPage($taxonomy)) {
-                $links[] = sprintf('[%s](%s)', Format::linkLabel($page->post_title), Format::linkUrl(get_permalink($page)));
+                $this->posts[] = $page->ID;
+                $links[] = sprintf('[%s](%s)', Format::linkLabel($page->post_title), Format::linkUrl((string) get_permalink($page)));
             }
         }
 
@@ -588,12 +664,17 @@ class LlmsTxt
         if ($url !== '' && ! isset($seen[$key])) {
             $seen[$key] = true;
             $title = Format::text($item->title);
+            $postId = $item->type === 'post_type' ? (int) $item->object_id : 0;
+
+            if ($postId) {
+                $this->posts[] = $postId;
+            }
 
             $links[] = [
                 // A label of only symbols (an `@` icon for an email link) reads as nothing.
-                'title' => preg_match('/[\p{L}\p{N}]/u', $title) ? $title : (string) preg_replace('#^(mailto:|tel:|https?://)#', '', $url),
+                'title' => preg_match('/[\p{L}\p{N}]/u', $title) ? $title : Format::replace('#^(mailto:|tel:|https?://)#', '', $url),
                 'url' => $url,
-                'description' => $item->type === 'post_type' && $item->object_id ? $this->description((int) $item->object_id) : '',
+                'description' => $postId ? $this->description($postId) : '',
             ];
         }
 
@@ -668,7 +749,7 @@ class LlmsTxt
             $sections[] = [
                 'heading' => $this->taxonomyLabel($taxonomy),
                 'lines' => array_map(
-                    fn (WP_Term $term) => Format::linkLine($term->name, get_term_link($term)),
+                    fn (WP_Term $term) => Format::linkLine($term->name, $this->termLink($term)),
                     $this->topLevelTerms($taxonomy, $language),
                 ),
             ];
@@ -699,7 +780,22 @@ class LlmsTxt
 
         $terms = get_terms($args);
 
-        return is_array($terms) ? $terms : [];
+        if (is_wp_error($terms)) {
+            throw new \RuntimeException(sprintf('Listing %s terms failed: %s', $taxonomy, $terms->get_error_message()));
+        }
+
+        return $terms;
+    }
+
+    protected function termLink(WP_Term $term): string
+    {
+        $link = get_term_link($term);
+
+        if (is_wp_error($link)) {
+            throw new \RuntimeException(sprintf('No link for %s term %d: %s', $term->taxonomy, $term->term_id, $link->get_error_message()));
+        }
+
+        return $link;
     }
 
     /**
@@ -791,6 +887,10 @@ class LlmsTxt
     protected function summary(): string
     {
         $frontPage = (int) get_option('page_on_front');
+
+        if ($frontPage > 0) {
+            $this->posts[] = $frontPage;
+        }
 
         $summary = $frontPage > 0 ? $this->description($frontPage, false) : '';
 

@@ -25,10 +25,21 @@ class FormatTest extends WP_UnitTestCase
         $this->assertSame('https://example.com/a%20b%28c%29', Format::linkUrl('https://example.com/a b(c)'));
     }
 
-    public function test_link_url_is_empty_for_errors(): void
+    /**
+     * preg_replace() with the `u` modifier returns null on an invalid byte
+     * sequence; a title must lose the bad byte, not every character.
+     */
+    public function test_invalid_utf8_is_stripped_rather_than_blanking_the_text(): void
     {
-        $this->assertSame('', Format::linkUrl(new \WP_Error('nope')));
-        $this->assertSame('', Format::linkUrl(false));
+        $this->assertStringEndsWith(' and valves', Format::text("Pumps\xC3 and valves"));
+    }
+
+    public function test_a_failing_pattern_throws(): void
+    {
+        $this->expectException(\RuntimeException::class);
+
+        // Catastrophic backtracking past pcre.backtrack_limit.
+        Format::replace('/(a+)+$/', '', str_repeat('a', 5000).'b');
     }
 
     public function test_truncate_prefers_a_sentence_boundary(): void

@@ -12,7 +12,11 @@
     ],
     "require": {
         "php": ">=8.2",
+        "ext-mbstring": "*",
         "league/html-to-markdown": "^5.1"
+    },
+    "suggest": {
+        "ext-intl": "Names languages in English (\"Swedish (Finland)\") rather than by locale code"
     },
     "require-dev": {
         "laravel/pint": "^1.17",

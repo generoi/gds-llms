@@ -341,6 +341,77 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringStartsWith('# Renamed', $llmsTxt->body(''));
     }
 
+    /**
+     * An editor's build can include menu items only they can see; caching it
+     * would serve that to everyone.
+     */
+    public function test_a_logged_in_build_is_not_cached(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        wp_set_current_user(self::factory()->user->create(['role' => 'administrator']));
+        $llmsTxt->body('');
+
+        wp_set_current_user(0);
+        update_option('blogname', 'Renamed');
+
+        $this->assertStringStartsWith('# Renamed', $llmsTxt->body(''));
+    }
+
+    public function test_revisions_do_not_flush(): void
+    {
+        $post = self::factory()->post->create();
+        $llmsTxt = new LlmsTxt;
+        $first = $llmsTxt->body('');
+        update_option('blogname', 'Renamed');
+
+        wp_insert_post(['post_type' => 'revision', 'post_status' => 'inherit', 'post_parent' => $post, 'post_name' => $post.'-revision-v1']);
+
+        $this->assertSame($first, $llmsTxt->body(''));
+    }
+
+    /**
+     * Orders and other non-public types are saved on every checkout.
+     */
+    public function test_non_public_posts_do_not_flush(): void
+    {
+        register_post_type('order_like', ['public' => false]);
+        $llmsTxt = new LlmsTxt;
+        $first = $llmsTxt->body('');
+        update_option('blogname', 'Renamed');
+
+        self::factory()->post->create(['post_type' => 'order_like']);
+        unregister_post_type('order_like');
+
+        $this->assertSame($first, $llmsTxt->body(''));
+    }
+
+    public function test_terms_outside_the_catalogue_do_not_flush(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        $first = $llmsTxt->body('');
+        update_option('blogname', 'Renamed');
+
+        self::factory()->term->create(['taxonomy' => 'post_tag']);
+
+        $this->assertSame($first, $llmsTxt->body(''));
+    }
+
+    /**
+     * Flushing mid-init would rebuild the rules before later-registering plugins
+     * had added theirs.
+     */
+    public function test_rewrite_rules_are_flushed_after_init(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        delete_option(LlmsTxt::REWRITE_VERSION_OPTION);
+
+        $llmsTxt->addRewriteRule();
+        $this->assertFalse(get_option(LlmsTxt::REWRITE_VERSION_OPTION), 'Registering the rule must not flush.');
+
+        $llmsTxt->maybeFlushRewriteRules();
+        $this->assertSame(LlmsTxt::REWRITE_VERSION.':', get_option(LlmsTxt::REWRITE_VERSION_OPTION));
+    }
+
     public function test_llms_txt_resolves_to_the_query_var(): void
     {
         flush_rewrite_rules(false);

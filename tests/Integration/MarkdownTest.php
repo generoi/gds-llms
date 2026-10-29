@@ -130,6 +130,19 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertStringContainsString("Tech & design\n\nCo-founder & CGO", $markdown);
     }
 
+    public function test_invalid_utf8_does_not_blank_the_page(): void
+    {
+        $post = self::factory()->post->create_and_get(['post_content' => '<p>Body</p>']);
+        $filter = fn (string $content) => $content."<p>Bad \xC3 byte</p>";
+
+        add_filter('the_content', $filter);
+        $markdown = (new Markdown)->render($post);
+        remove_filter('the_content', $filter);
+
+        $this->assertStringContainsString('Body', $markdown);
+        $this->assertStringContainsString('byte', $markdown);
+    }
+
     public function test_render_converts_tables(): void
     {
         $post = self::factory()->post->create_and_get([
