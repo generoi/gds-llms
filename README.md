@@ -13,7 +13,9 @@ Serves `/llms.txt` and a markdown version of every page for language models. An 
 
 Either way the markdown is answered after every `template_redirect` hook, so a login wall that redirects there stops it as it stops the page. Conversion follows screen-reader semantics: `aria-hidden` content and `alt=""` images are dropped, accordion questions and tab names kept, forms described by their field labels, iframes turned into links.
 
-Both responses carry `X-Robots-Tag: noindex`. With [sage-cachetags](https://github.com/generoi/sage-cachetags) installed they also carry surrogate keys, so the CDN is purged when the content changes; without it they are cached like any other page.
+**`robots.txt`** states the site's AI usage policy in both emerging vocabularies, in a `User-agent: *` group of its own at the end (crawlers merge it with the site's own `*` group): Cloudflare's [Content Signals](https://blog.cloudflare.com/content-signals-policy/) (`Content-Signal: search=yes, ai-input=yes, ai-train=yes`) and the IETF [aipref](https://datatracker.ietf.org/wg/aipref/about/) draft (`Content-Usage: train-ai=y, ai-use=y, search=y`), with Cloudflare's policy notice, which makes a declined use an express reservation of rights under EU copyright law. No crawler honours either yet, so a declined use also gets a `Disallow: /` group for the crawlers known to do it. Everything is allowed by default. Only WordPress' virtual robots.txt is changed; a physical `robots.txt` in the web root is served as is.
+
+Both responses carry `X-Robots-Tag: noindex`, and the same policy as `Content-Signal` and `Content-Usage` headers. With [sage-cachetags](https://github.com/generoi/sage-cachetags) installed they also carry surrogate keys, so the CDN is purged when the content changes; without it they are cached like any other page.
 
 Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carousels) has no HTML to convert, so it is missing from the markdown.
 
@@ -25,6 +27,7 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | `gds/llms_txt/taxonomies` | `['product_cat']` | Add a site's own product taxonomy. |
 | `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences keyed `language`, `translations`, `markdown`, `commerce`, `catalogue`, `network`), `links` (header links) and `sections` (`heading`, `lines`). |
 | `gds/llms_txt/network` | `false` | On a multisite, return `true` to link the network's other sites ("Related sites: …"), for sister sites a reader should know about. |
+| `gds/llms/ai_policy` | `['search' => true, 'ai-input' => true, 'ai-train' => true]` | Decline a use: `ai-train` for model training, `ai-input` for AI search and answers to users' questions. |
 | `gds/llms/markdown_mode` | `content` | `page` for sites whose templates draw content from post meta, or gate content behind a login form in the template. |
 | `gds/llms/markdown_content` | the rendered post content | In `content` mode, add what the template renders outside the content, such as a product's price. |
 | `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |

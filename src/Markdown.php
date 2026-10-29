@@ -279,6 +279,8 @@ class Markdown
         header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
         header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($this->pageUrl())));
+        header('Content-Signal: '.Robots::contentSignal());
+        header('Content-Usage: '.Robots::contentUsage());
     }
 
     protected function isHtmlResponse(): bool
