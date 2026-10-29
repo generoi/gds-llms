@@ -193,14 +193,34 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertFalse((new Markdown)->isAvailable($attachment));
     }
 
-    public function test_post_types_are_filterable(): void
+    /**
+     * Template-gated content -- an intranet page behind a login form -- is a
+     * published post as far as WordPress knows, so the site has to say so.
+     */
+    public function test_availability_is_filterable_per_post(): void
     {
-        $post = self::factory()->post->create_and_get();
-        $filter = fn (array $postTypes) => array_diff($postTypes, ['post']);
+        $gated = self::factory()->post->create_and_get(['post_type' => 'page']);
+        $open = self::factory()->post->create_and_get(['post_type' => 'page']);
+        update_post_meta($gated->ID, '_wp_page_template', 'template-intra.php');
+        $filter = fn (bool $available, \WP_Post $post) => $available && get_page_template_slug($post) !== 'template-intra.php';
 
-        add_filter('gds/llms/markdown_post_types', $filter);
+        add_filter('gds/llms/markdown_available', $filter, 10, 2);
+        $markdown = new Markdown;
+        $gatedAvailable = $markdown->isAvailable($gated);
+        $openAvailable = $markdown->isAvailable($open);
+        remove_filter('gds/llms/markdown_available', $filter);
+
+        $this->assertFalse($gatedAvailable);
+        $this->assertTrue($openAvailable);
+    }
+
+    public function test_non_public_post_types_are_not_available(): void
+    {
+        register_post_type('internal_note', ['public' => false]);
+        $post = self::factory()->post->create_and_get(['post_type' => 'internal_note']);
+
         $available = (new Markdown)->isAvailable($post);
-        remove_filter('gds/llms/markdown_post_types', $filter);
+        unregister_post_type('internal_note');
 
         $this->assertFalse($available);
     }

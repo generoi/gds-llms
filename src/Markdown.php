@@ -167,19 +167,19 @@ class Markdown
 
     public function isAvailable(WP_Post $post): bool
     {
-        return $post->post_status === 'publish'
+        $available = $post->post_status === 'publish'
             && ! post_password_required($post)
-            && in_array($post->post_type, $this->postTypes(), true);
-    }
+            && $post->post_type !== 'attachment'
+            && is_post_type_viewable($post->post_type);
 
-    /**
-     * @return string[]
-     */
-    public function postTypes(): array
-    {
-        $postTypes = array_values(array_diff(get_post_types(['public' => true]), ['attachment']));
-
-        return (array) apply_filters('gds/llms/markdown_post_types', $postTypes);
+        /**
+         * Whether a post has a markdown version.
+         *
+         * The markdown is the post content, rendered outside the theme, so any
+         * content a template hides -- behind a login form on an intranet page,
+         * say -- is served here in full unless the site returns false for it.
+         */
+        return (bool) apply_filters('gds/llms/markdown_available', $available, $post);
     }
 
     public function render(WP_Post $post): string

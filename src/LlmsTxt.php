@@ -18,14 +18,16 @@ use WP_Term;
  * The content differs from Yoast's too. Yoast picks five recently-modified
  * entries per post type and five terms from every taxonomy, which surfaces
  * whatever was edited last rather than what matters. Here the page list comes
- * from the site's navigation -- the client's own, already-maintained
- * information architecture, in the right language, with headings they
- * control -- and a webshop catalogue is described by the top of its category
- * tree.
+ * from the site's menus -- the client's own, already-maintained information
+ * architecture, in the right language, with headings they control -- and a
+ * webshop catalogue is described by the top of its category tree.
  *
  * llms.txt is an orientation document, not a second sitemap. It earns its place
  * by being small enough to sit in a model's context alongside the actual
  * question, so anything countable is left to the sitemap it links.
+ *
+ * @phpstan-type Section array{heading: string, lines: string[]}
+ * @phpstan-type Document array{title: string, summary: string, intro: string[], links: string[], sections: Section[]}
  */
 class LlmsTxt
 {
@@ -40,11 +42,6 @@ class LlmsTxt
     public const CACHE_TTL = 12 * HOUR_IN_SECONDS;
 
     public const MAX_LISTED = 100;
-
-    /**
-     * @var array<string, array{groups: array<int, array{title: string, links: string[]}>, ungrouped: string[]}>
-     */
-    protected array $menus = [];
 
     public function register(): void
     {
@@ -110,7 +107,6 @@ class LlmsTxt
 
         $language = $this->currentLanguage();
         $body = $this->body($language);
-        $url = $this->url($language);
 
         status_header(200);
         header('Content-Type: text/plain; charset=utf-8');
@@ -118,9 +114,9 @@ class LlmsTxt
 
         CacheTags::send(fn () => array_merge(
             CoreTags::archive(['page', 'post', 'product']),
-            CoreTags::anyTerm($this->catalogueTaxonomies()),
-            ...array_map([CoreTags::class, 'navigation'], $this->menuLocations()),
-        ), $url);
+            CoreTags::anyTerm($this->taxonomies()),
+            ...array_map([CoreTags::class, 'navigation'], array_keys($this->menus())),
+        ), $this->url($language));
 
         echo $body;
         exit;
@@ -182,59 +178,91 @@ class LlmsTxt
 
     public function build(string $language): string
     {
-        $this->menus = [];
+        /**
+         * The whole document before it is rendered, for anything a site needs
+         * to say that cannot be derived: what the business does (prepend to
+         * `intro`), a section renamed, reordered, added or dropped.
+         *
+         * @param  Document  $document
+         * @param  string  $language  Polylang slug, or '' without Polylang.
+         */
+        $document = apply_filters('gds/llms_txt/document', $this->document($language), $language);
 
-        $sections = array_merge(
-            [$this->headerSection($language)],
-            $this->navigationSections(),
-            $this->catalogueSections($language),
-            [$this->optionalSection()],
+        return $this->render($document);
+    }
+
+    /**
+     * @return Document
+     */
+    public function document(string $language): array
+    {
+        $links = [];
+        $sections = [];
+
+        foreach ($this->menuSections() as $index => [$loose, $groups]) {
+            // The first menu's loose links go in the header rather than under an
+            // invented heading: llms.txt allows free markdown between the summary
+            // and the first `##`, and a heading made up for them would be
+            // untranslated English among the client's own labels.
+            if ($index === 0) {
+                $links = $loose['lines'];
+            } elseif ($loose['lines']) {
+                $sections[] = $loose;
+            }
+
+            $sections = array_merge($sections, $groups);
+        }
+
+        return [
+            'title' => Format::text(get_bloginfo('name')),
+            'summary' => $this->summary(),
+            'intro' => $this->intro($language),
+            'links' => $links,
+            'sections' => array_merge($sections, $this->catalogueSections($language), $this->optionalSections()),
+        ];
+    }
+
+    /**
+     * @param  Document  $document
+     */
+    public function render(array $document): string
+    {
+        $header = ['# '.$document['title']];
+
+        if ($document['summary']) {
+            $header[] = '';
+            $header[] = '> '.$document['summary'];
+        }
+
+        if ($intro = array_filter($document['intro'])) {
+            $header[] = '';
+            $header[] = implode(' ', $intro);
+        }
+
+        if ($document['links']) {
+            $header[] = '';
+            $header = array_merge($header, $document['links']);
+        }
+
+        $sections = array_map(
+            fn (array $section) => Format::section($section['heading'], $section['lines']),
+            array_filter($document['sections'], fn (array $section) => $section['lines'] !== []),
         );
 
-        return implode("\n", array_filter($sections));
+        return implode("\n", [implode("\n", $header)."\n", ...$sections]);
     }
 
     /**
-     * Title, summary, orientation, and any primary nav links outside a group.
-     *
-     * The stray top-level links go here rather than under an invented heading:
-     * llms.txt allows free markdown between the summary and the first `##`, and
-     * any heading made up for them would be untranslated English sitting among
-     * the client's own labels.
-     */
-    protected function headerSection(string $language): string
-    {
-        $lines = ['# '.Format::text(get_bloginfo('name'))];
-
-        if ($summary = $this->summary()) {
-            $lines[] = '';
-            $lines[] = '> '.$summary;
-        }
-
-        $lines[] = '';
-        $lines[] = Format::text(apply_filters('gds/llms_txt/intro', $this->intro($language), $language));
-
-        if ($links = $this->menu($this->primaryMenuLocation())['ungrouped']) {
-            $lines[] = '';
-            $lines = array_merge($lines, $links);
-        }
-
-        return implode("\n", $lines)."\n";
-    }
-
-    /**
-     * How to read the rest of the document.
+     * How to read the rest of the document, one sentence per entry.
      *
      * Everything here is derived from what is actually configured rather than
      * described by hand, so it cannot quietly become untrue as the site changes.
-     * The one thing that cannot be derived -- what the business does -- is left
-     * to the `gds/llms_txt/about` filter and omitted by default, because the
-     * summary above already answers it from the front page.
+     *
+     * @return string[]
      */
-    protected function intro(string $language): string
+    protected function intro(string $language): array
     {
-        return implode(' ', array_filter([
-            (string) apply_filters('gds/llms_txt/about', '', $language),
+        return array_values(array_filter([
             sprintf('Written in %s.', $this->languageName($language)),
             $this->translationsSentence($language),
             $this->markdownSentence(),
@@ -314,7 +342,7 @@ class LlmsTxt
     {
         $links = [];
 
-        foreach ($this->catalogueTaxonomies() as $taxonomy) {
+        foreach ($this->taxonomies() as $taxonomy) {
             if ($page = $this->taxonomyPage($taxonomy)) {
                 $links[] = sprintf('[%s](%s)', Format::linkLabel($page->post_title), Format::linkUrl(get_permalink($page)));
             }
@@ -378,125 +406,111 @@ class LlmsTxt
 
     /*
     |--------------------------------------------------------------------------
-    | Navigation
+    | Menus
     |--------------------------------------------------------------------------
     */
 
-    protected function primaryMenuLocation(): string
-    {
-        return (string) apply_filters('gds/llms_txt/primary_menu', 'primary_navigation');
-    }
-
     /**
-     * Menus rendered after the primary navigation, each as one section.
+     * Every menu assigned to a location, keyed by location, primary first.
      *
-     * Footer menus are where the answers to most customer questions live --
-     * delivery terms, privacy, support -- and none of it is reachable from the
-     * primary navigation, so every registered footer location is included.
+     * Locations are named differently on nearly every site, so rather than
+     * guessing which ones matter all assigned ones are used and a site removes
+     * what it does not want listed. A menu assigned to two locations -- the
+     * mobile navigation usually reuses the primary one -- appears once.
      *
-     * @return string[]
+     * @return array<string, int>
      */
-    protected function secondaryMenuLocations(): array
+    protected function menus(): array
     {
-        $locations = array_filter(
-            array_keys(get_registered_nav_menus()),
-            fn (string $location) => str_contains($location, 'footer'),
-        );
+        $assigned = array_filter(get_nav_menu_locations());
+        $locations = array_keys(array_intersect_key(get_registered_nav_menus(), $assigned));
+        usort($locations, fn (string $a, string $b) => ($b === 'primary_navigation') <=> ($a === 'primary_navigation'));
 
-        return (array) apply_filters('gds/llms_txt/secondary_menus', array_values($locations));
-    }
+        /**
+         * The menu locations listed, in order. The first is treated as the
+         * primary navigation.
+         *
+         * @param  string[]  $locations
+         */
+        $locations = (array) apply_filters('gds/llms_txt/menus', $locations);
 
-    /**
-     * @return string[]
-     */
-    protected function menuLocations(): array
-    {
-        return array_merge([$this->primaryMenuLocation()], $this->secondaryMenuLocations());
-    }
+        $menus = [];
 
-    /**
-     * The primary navigation, one section per top-level group, then the
-     * secondary menus.
-     *
-     * The menu is the only place on the site where somebody has already decided
-     * which pages matter and how they relate. Groups are `custom` items pointing
-     * at `#`, so they become headings; anything with a real URL becomes a link.
-     *
-     * @return string[]
-     */
-    protected function navigationSections(): array
-    {
-        $sections = [];
+        foreach ($locations as $location) {
+            $menuId = (int) ($assigned[$location] ?? 0);
 
-        foreach ($this->menu($this->primaryMenuLocation())['groups'] as $group) {
-            if ($group['links']) {
-                $sections[] = Format::section($group['title'], $group['links']);
+            if ($menuId && ! in_array($menuId, $menus, true)) {
+                $menus[$location] = $menuId;
             }
         }
 
-        foreach ($this->secondaryMenuLocations() as $location) {
-            if ($section = $this->secondaryMenuSection($location)) {
-                $sections[] = $section;
+        return $menus;
+    }
+
+    /**
+     * Each menu as its loose links plus one section per group.
+     *
+     * Groups are top-level items pointing at `#` -- how a menu gives a dropdown
+     * or a footer column a heading without a page behind it -- so they become
+     * headings, and everything beneath them, at any depth, the links under that
+     * heading. Loose links are filed under the menu's own name, which is what the
+     * client called it.
+     *
+     * @return list<array{Section, Section[]}>
+     */
+    protected function menuSections(): array
+    {
+        $sections = [];
+
+        foreach ($this->menus() as $menuId) {
+            $object = wp_get_nav_menu_object($menuId);
+            $items = wp_get_nav_menu_items($menuId) ?: [];
+            $parents = array_column(array_map(fn ($item) => ['id' => $item->ID, 'parent' => (int) $item->menu_item_parent], $items), 'parent', 'id');
+
+            $loose = [];
+            $groups = [];
+
+            foreach ($items as $item) {
+                if (! $item->menu_item_parent && $this->isGroup($item)) {
+                    $groups[$item->ID] = ['heading' => Format::text($item->title), 'lines' => []];
+
+                    continue;
+                }
+
+                $line = Format::linkLine($item->title, $item->url, $this->menuItemDescription($item));
+                $root = $this->rootItem((int) $item->ID, $parents);
+
+                if (isset($groups[$root])) {
+                    $groups[$root]['lines'][] = $line;
+                } else {
+                    $loose[] = $line;
+                }
             }
+
+            $sections[] = [
+                ['heading' => $object ? Format::text($object->name) : '', 'lines' => $loose],
+                array_values(array_filter($groups, fn (array $group) => $group['lines'] !== [])),
+            ];
         }
 
         return $sections;
     }
 
-    /**
-     * A whole menu as one section, named after the menu itself -- footer menus
-     * are usually flat, so there are no group items to take headings from, and
-     * the menu's own name is what the client called it.
-     */
-    protected function secondaryMenuSection(string $location): string
+    protected function isGroup(object $item): bool
     {
-        $menuId = get_nav_menu_locations()[$location] ?? 0;
-        $object = $menuId ? wp_get_nav_menu_object($menuId) : null;
-
-        if (! $object) {
-            return '';
-        }
-
-        $parsed = $this->menu($location);
-        $links = array_merge($parsed['ungrouped'], ...array_column($parsed['groups'], 'links'));
-
-        return $links ? Format::section($object->name, $links) : '';
+        return in_array(trim((string) $item->url), ['#', ''], true);
     }
 
     /**
-     * @return array{groups: array<int, array{title: string, links: string[]}>, ungrouped: string[]}
+     * @param  array<int, int>  $parents
      */
-    protected function menu(string $location): array
+    protected function rootItem(int $itemId, array $parents): int
     {
-        if (isset($this->menus[$location])) {
-            return $this->menus[$location];
+        while (($parents[$itemId] ?? 0) !== 0) {
+            $itemId = $parents[$itemId];
         }
 
-        $menu = ['groups' => [], 'ungrouped' => []];
-        $menuId = get_nav_menu_locations()[$location] ?? 0;
-        $items = $menuId ? (wp_get_nav_menu_items($menuId) ?: []) : [];
-
-        foreach ($items as $item) {
-            $isGroup = in_array(trim($item->url), ['#', ''], true);
-
-            if (! $item->menu_item_parent && $isGroup) {
-                $menu['groups'][$item->ID] = ['title' => $item->title, 'links' => []];
-
-                continue;
-            }
-
-            $link = Format::linkLine($item->title, $item->url, $this->menuItemDescription($item));
-
-            if ($item->menu_item_parent && isset($menu['groups'][$item->menu_item_parent])) {
-                $menu['groups'][$item->menu_item_parent]['links'][] = $link;
-
-                continue;
-            }
-
-            $menu['ungrouped'][] = $link;
-        }
-
-        return $this->menus[$location] = $menu;
+        return $itemId;
     }
 
     protected function menuItemDescription(object $item): string
@@ -515,15 +529,24 @@ class LlmsTxt
     /**
      * @return string[]
      */
-    protected function catalogueTaxonomies(): array
+    protected function taxonomies(): array
     {
-        $taxonomies = (array) apply_filters('gds/llms_txt/catalogue_taxonomies', ['product_cat']);
+        /**
+         * Taxonomies listed as a catalogue, by their top level of terms.
+         *
+         * Only product categories by default: most sites' other public
+         * taxonomies group staff, news or references, which is noise in an
+         * orientation document. A site with its own product taxonomy adds it.
+         *
+         * @param  string[]  $taxonomies
+         */
+        $taxonomies = (array) apply_filters('gds/llms_txt/taxonomies', ['product_cat']);
 
         return array_values(array_filter($taxonomies, 'taxonomy_exists'));
     }
 
     /**
-     * Each catalogue as its top level of categories.
+     * Each catalogue as its top level of terms.
      *
      * A model asked about a webshop almost always wants to know what it sells,
      * and the top level of the category tree answers that in a couple of dozen
@@ -531,21 +554,20 @@ class LlmsTxt
      * too -- they usually hold landing-page marketing copy, which buries the
      * structure the tree exists to convey.
      *
-     * @return string[]
+     * @return Section[]
      */
     protected function catalogueSections(string $language): array
     {
         $sections = [];
 
-        foreach ($this->catalogueTaxonomies() as $taxonomy) {
-            $terms = $this->topLevelTerms($taxonomy, $language);
-
-            if ($terms) {
-                $sections[] = Format::section($this->taxonomyLabel($taxonomy), array_map(
+        foreach ($this->taxonomies() as $taxonomy) {
+            $sections[] = [
+                'heading' => $this->taxonomyLabel($taxonomy),
+                'lines' => array_map(
                     fn (WP_Term $term) => Format::linkLine($term->name, get_term_link($term)),
-                    $terms,
-                ));
-            }
+                    $this->topLevelTerms($taxonomy, $language),
+                ),
+            ];
         }
 
         return $sections;
@@ -586,18 +608,15 @@ class LlmsTxt
     }
 
     /**
-     * Section heading for a taxonomy.
-     *
-     * Prefers the title of the landing page the taxonomy is rewritten under,
-     * because that is the name the site actually calls the section; registered
-     * labels are often untranslated developer strings.
+     * Section heading for a taxonomy: the title of the landing page it is
+     * rewritten under where there is one, because that is the name the site
+     * actually uses; registered labels are often untranslated developer strings.
      */
     protected function taxonomyLabel(string $taxonomy): string
     {
         $object = get_taxonomy($taxonomy);
-        $label = $this->taxonomyPage($taxonomy)->post_title ?? ($object ? $object->labels->name : $taxonomy);
 
-        return (string) apply_filters('gds/llms_txt/section_label', $label, $taxonomy);
+        return Format::text($this->taxonomyPage($taxonomy)->post_title ?? ($object ? $object->labels->name : $taxonomy));
     }
 
     /*
@@ -609,18 +628,17 @@ class LlmsTxt
     /**
      * Where the exhaustive lists live. English throughout because the `Optional`
      * heading is fixed by the llms.txt format.
+     *
+     * @return Section[]
      */
-    protected function optionalSection(): string
+    protected function optionalSections(): array
     {
         $url = $this->sitemapUrl();
 
-        if (! $url) {
-            return '';
-        }
-
-        return Format::section('Optional', [
-            Format::linkLine('Sitemap', $url, 'Every indexable URL, split by content type.'),
-        ]);
+        return $url ? [[
+            'heading' => 'Optional',
+            'lines' => [Format::linkLine('Sitemap', $url, 'Every indexable URL, split by content type.')],
+        ]] : [];
     }
 
     protected function sitemapUrl(): string
@@ -669,9 +687,8 @@ class LlmsTxt
         $frontPage = (int) get_option('page_on_front');
 
         $summary = $frontPage > 0 ? $this->description($frontPage, false) : '';
-        $summary = $summary ?: Format::truncate(Format::text(get_bloginfo('description')));
 
-        return (string) apply_filters('gds/llms_txt/summary', $summary);
+        return $summary ?: Format::truncate(Format::text(get_bloginfo('description')));
     }
 
     /*

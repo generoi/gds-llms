@@ -13,9 +13,11 @@ class LlmsTxtTest extends WP_UnitTestCase
 
         $this->set_permalink_structure('/%postname%/');
         register_nav_menus([
+            'top_navigation' => 'Top',
             'primary_navigation' => 'Primary',
+            'mobile_navigation' => 'Mobile',
             'footer_navigation' => 'Footer',
-            'social_navigation' => 'Social',
+            'intra_navigation' => 'Intranet',
         ]);
         update_option('blogname', 'Acme');
         update_option('blogdescription', 'We make things.');
@@ -23,9 +25,9 @@ class LlmsTxtTest extends WP_UnitTestCase
 
     public function tear_down(): void
     {
-        unregister_nav_menu('primary_navigation');
-        unregister_nav_menu('footer_navigation');
-        unregister_nav_menu('social_navigation');
+        foreach (['top_navigation', 'primary_navigation', 'mobile_navigation', 'footer_navigation', 'intra_navigation'] as $location) {
+            unregister_nav_menu($location);
+        }
 
         parent::tear_down();
     }
@@ -41,7 +43,7 @@ class LlmsTxtTest extends WP_UnitTestCase
      * The front page's own description is a better summary than the tagline
      * when an editor has written one.
      */
-    public function test_summary_prefers_the_front_page_excerpt(): void
+    public function test_summary_prefers_a_hand_written_front_page_excerpt(): void
     {
         $front = self::factory()->post->create(['post_type' => 'page', 'post_excerpt' => 'Industrial pumps since 1950.']);
         update_option('show_on_front', 'page');
@@ -71,30 +73,19 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringContainsString('followed by `index.html.md`', $body);
     }
 
-    public function test_the_about_filter_leads_the_intro(): void
-    {
-        $filter = fn () => 'Acme sells pumps.';
-
-        add_filter('gds/llms_txt/about', $filter);
-        $body = (new LlmsTxt)->build('');
-        remove_filter('gds/llms_txt/about', $filter);
-
-        $this->assertStringContainsString("\nAcme sells pumps. Written in English.", $body);
-    }
-
     /**
-     * `#` items are how the menu groups pages, so they become headings and their
-     * children the links under them. Loose links stay in the header rather than
-     * under a heading this package would have to invent.
+     * `#` items are how a menu groups pages, so they become headings and their
+     * children the links under them. The primary menu's loose links stay in the
+     * header rather than under a heading this package would have to invent.
      */
     public function test_primary_menu_groups_become_sections(): void
     {
         $page = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Repairs', 'post_excerpt' => 'We fix pumps.']);
 
         $menu = wp_create_nav_menu('Main');
-        $group = $this->menuItem($menu, ['menu-item-title' => 'Services', 'menu-item-url' => '#', 'menu-item-type' => 'custom']);
+        $group = $this->customItem($menu, 'Services', '#');
         $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type', 'menu-item-parent-id' => $group]);
-        $this->menuItem($menu, ['menu-item-title' => 'Contact', 'menu-item-url' => 'https://example.com/contact', 'menu-item-type' => 'custom']);
+        $this->customItem($menu, 'Contact', 'https://example.com/contact');
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
         $body = (new LlmsTxt)->build('');
@@ -107,32 +98,78 @@ class LlmsTxtTest extends WP_UnitTestCase
         );
     }
 
-    public function test_footer_menus_become_sections_named_after_the_menu(): void
+    /**
+     * Mega menus nest a third level under a group's links; those belong to the
+     * group too, not to the header.
+     */
+    public function test_items_nested_below_a_group_stay_in_that_group(): void
     {
-        $footer = wp_create_nav_menu('Customer service');
-        $this->menuItem($footer, ['menu-item-title' => 'Delivery terms', 'menu-item-url' => 'https://example.com/delivery', 'menu-item-type' => 'custom']);
-        $social = wp_create_nav_menu('Follow us');
-        $this->menuItem($social, ['menu-item-title' => 'LinkedIn', 'menu-item-url' => 'https://linkedin.com/x', 'menu-item-type' => 'custom']);
-        set_theme_mod('nav_menu_locations', ['footer_navigation' => $footer, 'social_navigation' => $social]);
+        $menu = wp_create_nav_menu('Main');
+        $group = $this->customItem($menu, 'Products', '#');
+        $child = $this->customItem($menu, 'Pumps', 'https://example.com/pumps', $group);
+        $this->customItem($menu, 'Hand pumps', 'https://example.com/pumps/hand', $child);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringContainsString("## Products\n- [Pumps](https://example.com/pumps)\n- [Hand pumps](https://example.com/pumps/hand)", $body);
+    }
+
+    /**
+     * Location names differ on every site, so every assigned menu is listed,
+     * the primary navigation first wherever it is registered.
+     */
+    public function test_every_assigned_menu_is_listed_primary_first(): void
+    {
+        $top = wp_create_nav_menu('Quick links');
+        $this->customItem($top, 'Careers', 'https://example.com/careers');
+        $primary = wp_create_nav_menu('Main');
+        $this->customItem($primary, 'About', 'https://example.com/about');
+        set_theme_mod('nav_menu_locations', ['top_navigation' => $top, 'primary_navigation' => $primary]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringContainsString("\n- [About](https://example.com/about)\n\n## Quick links\n- [Careers](https://example.com/careers)", $body);
+    }
+
+    public function test_a_menu_assigned_twice_is_listed_once(): void
+    {
+        $primary = wp_create_nav_menu('Main');
+        $this->customItem($primary, 'About', 'https://example.com/about');
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'mobile_navigation' => $primary]);
+
+        $this->assertSame(1, substr_count((new LlmsTxt)->build(''), '[About]'));
+    }
+
+    /**
+     * Footer columns are usually `#` items with links under them, so they get
+     * the column headings rather than the menu's name.
+     */
+    public function test_groups_in_other_menus_become_sections_too(): void
+    {
+        $footer = wp_create_nav_menu('Footer EN');
+        $column = $this->customItem($footer, 'Customer service', '#');
+        $this->customItem($footer, 'Delivery terms', 'https://example.com/delivery', $column);
+        set_theme_mod('nav_menu_locations', ['footer_navigation' => $footer]);
 
         $body = (new LlmsTxt)->build('');
 
         $this->assertStringContainsString("## Customer service\n- [Delivery terms](https://example.com/delivery)", $body);
-        $this->assertStringNotContainsString('LinkedIn', $body);
+        $this->assertStringNotContainsString('Footer EN', $body);
     }
 
-    public function test_secondary_menus_are_filterable(): void
+    public function test_menus_are_excluded_by_location(): void
     {
-        $social = wp_create_nav_menu('Follow us');
-        $this->menuItem($social, ['menu-item-title' => 'LinkedIn', 'menu-item-url' => 'https://linkedin.com/x', 'menu-item-type' => 'custom']);
-        set_theme_mod('nav_menu_locations', ['social_navigation' => $social]);
-        $filter = fn () => ['social_navigation'];
+        $intra = wp_create_nav_menu('Intranet');
+        $this->customItem($intra, 'Staff handbook', 'https://example.com/intra/handbook');
+        set_theme_mod('nav_menu_locations', ['intra_navigation' => $intra]);
+        $filter = fn (array $locations) => array_diff($locations, ['intra_navigation']);
 
-        add_filter('gds/llms_txt/secondary_menus', $filter);
+        add_filter('gds/llms_txt/menus', $filter);
         $body = (new LlmsTxt)->build('');
-        remove_filter('gds/llms_txt/secondary_menus', $filter);
+        remove_filter('gds/llms_txt/menus', $filter);
 
-        $this->assertStringContainsString("## Follow us\n- [LinkedIn](https://linkedin.com/x)", $body);
+        $this->assertStringNotContainsString('Staff handbook', $body);
     }
 
     public function test_catalogue_lists_the_top_level_of_a_taxonomy(): void
@@ -143,9 +180,9 @@ class LlmsTxtTest extends WP_UnitTestCase
         wp_set_object_terms(self::factory()->post->create(), [$parent, $child], 'catalogue');
         $filter = fn () => ['catalogue'];
 
-        add_filter('gds/llms_txt/catalogue_taxonomies', $filter);
+        add_filter('gds/llms_txt/taxonomies', $filter);
         $body = (new LlmsTxt)->build('');
-        remove_filter('gds/llms_txt/catalogue_taxonomies', $filter);
+        remove_filter('gds/llms_txt/taxonomies', $filter);
         unregister_taxonomy('catalogue');
 
         $this->assertStringContainsString("## Catalogue\n- [Pumps](", $body);
@@ -155,6 +192,27 @@ class LlmsTxtTest extends WP_UnitTestCase
     public function test_optional_section_links_the_sitemap(): void
     {
         $this->assertStringContainsString("## Optional\n- [Sitemap](".home_url('/wp-sitemap.xml').')', (new LlmsTxt)->build(''));
+    }
+
+    /**
+     * One filter for everything that cannot be derived: what the business does,
+     * a section renamed or dropped.
+     */
+    public function test_the_document_is_filterable(): void
+    {
+        $filter = function (array $document) {
+            array_unshift($document['intro'], 'Acme sells pumps.');
+            $document['sections'] = array_filter($document['sections'], fn ($section) => $section['heading'] !== 'Optional');
+
+            return $document;
+        };
+
+        add_filter('gds/llms_txt/document', $filter);
+        $body = (new LlmsTxt)->build('');
+        remove_filter('gds/llms_txt/document', $filter);
+
+        $this->assertStringContainsString("\nAcme sells pumps. Written in English.", $body);
+        $this->assertStringNotContainsString('## Optional', $body);
     }
 
     public function test_body_is_cached_until_content_changes(): void
@@ -176,6 +234,16 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->go_to(home_url('/llms.txt'));
 
         $this->assertSame('1', get_query_var(LlmsTxt::QUERY_VAR));
+    }
+
+    protected function customItem(int $menu, string $title, string $url, int $parent = 0): int
+    {
+        return $this->menuItem($menu, [
+            'menu-item-title' => $title,
+            'menu-item-url' => $url,
+            'menu-item-type' => 'custom',
+            'menu-item-parent-id' => $parent,
+        ]);
     }
 
     /**
