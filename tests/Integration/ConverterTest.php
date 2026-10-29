@@ -2,7 +2,7 @@
 
 namespace GeneroWP\Llms\Tests\Integration;
 
-use GeneroWP\Llms\Converter;
+use GeneroWP\Llms\Markdown\Converter;
 use WP_UnitTestCase;
 
 class ConverterTest extends WP_UnitTestCase

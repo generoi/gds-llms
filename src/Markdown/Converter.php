@@ -1,11 +1,11 @@
 <?php
 
-namespace GeneroWP\Llms;
+namespace GeneroWP\Llms\Markdown;
 
 use DOMDocument;
 use DOMElement;
 use DOMNode;
-use DOMXPath;
+use GeneroWP\Llms\Format;
 use League\HTMLToMarkdown\Converter\TableConverter;
 use League\HTMLToMarkdown\HtmlConverter;
 use WP_Http;
@@ -22,9 +22,9 @@ use WP_Http;
  */
 class Converter
 {
-    protected DOMDocument $doc;
+    protected Dom $dom;
 
-    protected DOMXPath $xpath;
+    protected DOMDocument $doc;
 
     /**
      * @param  string  $base  absolute URL of the page, which relative links resolve against
@@ -32,30 +32,29 @@ class Converter
     public function __construct(protected string $base) {}
 
     /**
-     * Convert a whole page: its `<main>` (or `role="main"`), else its `<body>`.
-     *
-     * Laid out as Cloudflare's Markdown for Agents lays out a page: YAML
-     * frontmatter from the page's metadata, the content, then the page's JSON-LD
-     * in a fenced `json` block. The page's `<title>` becomes the H1 when the
-     * main content has none.
+     * Convert a whole page: its `<main>` (or `role="main"`), else its `<body>`,
+     * between the page's frontmatter and its JSON-LD. The page's `<title>`
+     * becomes the H1 when the main content has none.
      */
     public function page(string $html): string
     {
-        $this->load($html);
+        $this->dom = new Dom($html);
+        $this->doc = $this->dom->doc;
 
-        $main = $this->first('//main') ?? $this->first('//*[@role="main"]') ?? $this->first('//body');
+        $main = $this->dom->first('//main') ?? $this->dom->first('//*[@role="main"]') ?? $this->dom->first('//body');
 
         if (! $main) {
             return '';
         }
 
         // Read before clean() drops every script.
-        $frontmatter = $this->frontmatter();
-        $jsonLd = $this->jsonLd();
+        $frontmatter = new Frontmatter($this->dom, $this->base);
+        $yaml = $frontmatter->yaml();
+        $jsonLd = $frontmatter->jsonLd();
 
         $markdown = $this->toMarkdown($this->clean($main));
 
-        if (! preg_match('/^# /m', $markdown) && ($title = $this->first('//title'))) {
+        if (! preg_match('/^# /m', $markdown) && ($title = $this->dom->first('//title'))) {
             $markdown = trim('# '.Format::text($title->textContent)."\n\n".$markdown);
         }
 
@@ -65,124 +64,17 @@ class Converter
 
         $markdown = trim($markdown);
 
-        return ($frontmatter ? $frontmatter."\n" : '').($markdown === '' ? '' : $markdown."\n");
-    }
-
-    /**
-     * YAML frontmatter from the page's metadata, only for the fields it has.
-     *
-     * Values are JSON strings, which YAML reads as double-quoted scalars, so a
-     * colon or quote in a title cannot break the block.
-     */
-    protected function frontmatter(): string
-    {
-        $offer = $this->offer();
-        $fields = [
-            'title' => $this->meta('og:title') ?: Format::text($this->first('//title')?->textContent),
-            'description' => $this->meta('description') ?: $this->meta('og:description'),
-            'image' => $this->meta('og:image'),
-            'url' => $this->first('//link[@rel="canonical"]')?->getAttribute('href') ?: $this->base,
-            'language' => Format::text($this->first('//html')?->getAttribute('lang')),
-            'modified' => $this->meta('article:modified_time'),
-            // Open Graph's product tags, else the page's schema.org Offer.
-            'price' => $this->meta('product:price:amount') ?: $offer['price'],
-            'currency' => $this->meta('product:price:currency') ?: $offer['priceCurrency'],
-            'availability' => $this->meta('product:availability') ?: $offer['availability'],
-            'sku' => $this->meta('product:retailer_item_id') ?: $offer['sku'],
-        ];
-
-        $lines = [];
-        foreach (array_filter($fields) as $name => $value) {
-            $lines[] = $name.': '.wp_json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        }
-
-        return $lines ? "---\n".implode("\n", $lines)."\n---\n" : '';
-    }
-
-    /**
-     * The content of a `<meta>` named by `name` or `property`.
-     */
-    protected function meta(string $name): string
-    {
-        $meta = $this->first(sprintf('//meta[@name=%1$s or @property=%1$s]', $this->literal($name)));
-
-        return Format::text($meta?->getAttribute('content'));
-    }
-
-    /**
-     * Price, currency, availability and SKU of the first schema.org Product on
-     * the page, as WooCommerce and Yoast describe a product page.
-     *
-     * @return array{price: string, priceCurrency: string, availability: string, sku: string}
-     */
-    protected function offer(): array
-    {
-        $offer = ['price' => '', 'priceCurrency' => '', 'availability' => '', 'sku' => ''];
-
-        foreach ($this->query('//script[@type="application/ld+json"]') as $script) {
-            $data = json_decode(trim($script->textContent), true);
-            $nodes = is_array($data) ? ($data['@graph'] ?? (array_is_list($data) ? $data : [$data])) : [];
-
-            foreach ($nodes as $node) {
-                if (! is_array($node) || ! in_array('Product', (array) ($node['@type'] ?? []), true)) {
-                    continue;
-                }
-
-                $offers = $node['offers'] ?? [];
-                $first = array_is_list($offers) ? ($offers[0] ?? []) : $offers;
-                // A price range (variable product) lists its bounds instead.
-                $price = $first['price'] ?? $first['lowPrice'] ?? $first['priceSpecification'][0]['price'] ?? '';
-
-                return [
-                    'price' => is_scalar($price) ? (string) $price : '',
-                    'priceCurrency' => (string) ($first['priceCurrency'] ?? $first['priceSpecification'][0]['priceCurrency'] ?? ''),
-                    // `https://schema.org/InStock` reads better as `InStock`.
-                    'availability' => basename((string) ($first['availability'] ?? '')),
-                    'sku' => (string) ($node['sku'] ?? ''),
-                ];
-            }
-        }
-
-        return $offer;
-    }
-
-    /**
-     * Every JSON-LD block on the page, re-encoded on one line each.
-     *
-     * @return string[]
-     */
-    protected function jsonLd(): array
-    {
-        $blocks = [];
-        foreach ($this->query('//script[@type="application/ld+json"]') as $script) {
-            $data = json_decode(trim($script->textContent), true);
-            if ($data !== null) {
-                $blocks[] = (string) wp_json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            }
-        }
-
-        return $blocks;
-    }
-
-    protected function load(string $html): void
-    {
-        $this->doc = new DOMDocument;
-        $previous = libxml_use_internal_errors(true);
-        // DOMDocument silently drops a whole element containing an invalid byte sequence.
-        $this->doc->loadHTML('<?xml encoding="utf-8"?>'.wp_check_invalid_utf8($html, true), LIBXML_NOERROR);
-        libxml_clear_errors();
-        libxml_use_internal_errors($previous);
-        $this->xpath = new DOMXPath($this->doc);
+        return ($yaml ? $yaml."\n" : '').($markdown === '' ? '' : $markdown."\n");
     }
 
     protected function clean(DOMElement $root): string
     {
-        $this->remove('.//script|.//style|.//noscript|.//template|.//svg|.//canvas|.//nav|.//*[@aria-hidden="true"]|.//form[@role="search"]', $root);
+        $this->dom->remove('.//script|.//style|.//noscript|.//template|.//svg|.//canvas|.//nav|.//*[@aria-hidden="true"]|.//form[@role="search"]', $root);
         $this->labelTabPanels($root);
         $this->replaceDisclosureButtons($root);
-        $this->remove('.//button', $root);
+        $this->dom->remove('.//button', $root);
         $this->describeForms($root);
-        $this->remove('.//input|.//select|.//textarea', $root);
+        $this->dom->remove('.//input|.//select|.//textarea', $root);
         $this->replaceIframes($root);
         $this->cleanImages($root);
         $this->cleanLinks($root);
@@ -223,8 +115,8 @@ class Converter
      */
     protected function labelTabPanels(DOMElement $root): void
     {
-        foreach ($this->query('.//*[@role="tabpanel"][@aria-labelledby]', $root) as $panel) {
-            $tab = $this->byId($panel->getAttribute('aria-labelledby'));
+        foreach ($this->dom->query('.//*[@role="tabpanel"][@aria-labelledby]', $root) as $panel) {
+            $tab = $this->dom->byId($panel->getAttribute('aria-labelledby'));
             $label = $tab ? Format::text($tab->textContent) : '';
 
             if ($label !== '') {
@@ -232,7 +124,7 @@ class Converter
             }
         }
 
-        $this->remove('.//*[@role="tablist"]', $root);
+        $this->dom->remove('.//*[@role="tablist"]', $root);
     }
 
     /**
@@ -242,15 +134,15 @@ class Converter
      */
     protected function replaceDisclosureButtons(DOMElement $root): void
     {
-        foreach ($this->query('.//button[@aria-controls]', $root) as $button) {
-            $panel = $this->byId($button->getAttribute('aria-controls'));
+        foreach ($this->dom->query('.//button[@aria-controls]', $root) as $button) {
+            $panel = $this->dom->byId($button->getAttribute('aria-controls'));
             $label = Format::text($button->textContent);
 
             if ($label === '' || ! $panel || Format::text($panel->textContent) === '') {
                 continue;
             }
 
-            $inHeading = (bool) $this->first('ancestor::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $button);
+            $inHeading = (bool) $this->dom->first('ancestor::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $button);
             $button->parentNode?->replaceChild($inHeading ? $this->doc->createTextNode($label) : $this->paragraph($this->strong($label)), $button);
         }
     }
@@ -261,12 +153,12 @@ class Converter
      */
     protected function describeForms(DOMElement $root): void
     {
-        foreach ($this->query('.//form', $root) as $form) {
+        foreach ($this->dom->query('.//form', $root) as $form) {
             $name = Format::text($form->getAttribute('aria-label'))
-                ?: Format::text($this->byId($form->getAttribute('aria-labelledby'))?->textContent);
+                ?: Format::text($this->dom->byId($form->getAttribute('aria-labelledby'))?->textContent);
 
             // Gravity Forms' honeypot is a labelled field hidden from people by CSS alone.
-            $labels = $this->query('.//label[not(ancestor::*[contains(concat(" ", @class, " "), " gform_validation_container ")])]|.//legend', $form);
+            $labels = $this->dom->query('.//label[not(ancestor::*[contains(concat(" ", @class, " "), " gform_validation_container ")])]|.//legend', $form);
             $fields = [];
             foreach ($labels as $label) {
                 $text = Format::text($label->textContent);
@@ -302,7 +194,7 @@ class Converter
      */
     protected function replaceIframes(DOMElement $root): void
     {
-        foreach ($this->query('.//iframe', $root) as $iframe) {
+        foreach ($this->dom->query('.//iframe', $root) as $iframe) {
             $src = $iframe->getAttribute('src') ?: $iframe->getAttribute('data-src');
             $replacement = null;
 
@@ -324,7 +216,7 @@ class Converter
      */
     protected function cleanImages(DOMElement $root): void
     {
-        foreach ($this->query('.//img', $root) as $img) {
+        foreach ($this->dom->query('.//img', $root) as $img) {
             $src = $img->getAttribute('src');
             if ($src === '' || str_starts_with($src, 'data:')) {
                 $src = $img->getAttribute('data-src');
@@ -342,7 +234,7 @@ class Converter
 
     protected function cleanLinks(DOMElement $root): void
     {
-        foreach ($this->query('.//a[@href]', $root) as $link) {
+        foreach ($this->dom->query('.//a[@href]', $root) as $link) {
             $href = trim($link->getAttribute('href'));
 
             // In-page anchors and `#` placeholders lead nowhere outside the page.
@@ -354,7 +246,7 @@ class Converter
 
             $link->setAttribute('href', $this->absolute($href));
 
-            if (Format::text($link->textContent) === '' && ! $this->first('.//img', $link)) {
+            if (Format::text($link->textContent) === '' && ! $this->dom->first('.//img', $link)) {
                 $label = Format::text($link->getAttribute('aria-label'));
                 $label === '' ? $link->parentNode?->removeChild($link) : $link->appendChild($this->doc->createTextNode($label));
 
@@ -363,7 +255,7 @@ class Converter
 
             // A heading inside a link renders as `[ ## Title ](url)`: link the
             // heading's text instead.
-            $headings = $this->query('.//h1|.//h2|.//h3|.//h4|.//h5|.//h6', $link);
+            $headings = $this->dom->query('.//h1|.//h2|.//h3|.//h4|.//h5|.//h6', $link);
             foreach ($headings as $heading) {
                 $inner = $this->doc->createElement('a');
                 $inner->setAttribute('href', $link->getAttribute('href'));
@@ -410,60 +302,5 @@ class Converter
             $parent->insertBefore($node->firstChild, $node);
         }
         $parent->removeChild($node);
-    }
-
-    protected function byId(string $id): ?DOMElement
-    {
-        if ($id === '') {
-            return null;
-        }
-
-        // aria-labelledby may list several ids; the first names the element.
-        $id = strtok($id, ' ');
-
-        return $this->first(sprintf('//*[@id=%s]', $this->literal((string) $id)));
-    }
-
-    /**
-     * An XPath string literal for any value, quotes included.
-     */
-    protected function literal(string $value): string
-    {
-        if (! str_contains($value, "'")) {
-            return "'".$value."'";
-        }
-
-        return 'concat(\''.str_replace("'", "',\"'\",'", $value).'\')';
-    }
-
-    protected function first(string $expression, ?DOMNode $context = null): ?DOMElement
-    {
-        $node = $this->query($expression, $context)[0] ?? null;
-
-        return $node instanceof DOMElement ? $node : null;
-    }
-
-    /**
-     * Matching elements, as a list detached from the live result so the tree
-     * can be changed while iterating.
-     *
-     * @return DOMElement[]
-     */
-    protected function query(string $expression, ?DOMNode $context = null): array
-    {
-        $nodes = $this->xpath->query($expression, $context);
-
-        if ($nodes === false) {
-            throw new \RuntimeException(sprintf('Invalid XPath expression: %s', $expression));
-        }
-
-        return array_values(array_filter(iterator_to_array($nodes), fn ($node) => $node instanceof DOMElement));
-    }
-
-    protected function remove(string $expression, DOMElement $root): void
-    {
-        foreach ($this->query($expression, $root) as $node) {
-            $node->parentNode?->removeChild($node);
-        }
     }
 }
