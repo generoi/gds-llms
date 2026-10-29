@@ -34,7 +34,10 @@ class Converter
     /**
      * Convert a whole page: its `<main>` (or `role="main"`), else its `<body>`.
      *
-     * The page's `<title>` becomes the H1 when the main content has none.
+     * Laid out as Cloudflare's Markdown for Agents lays out a page: YAML
+     * frontmatter from the page's metadata, the content, then the page's JSON-LD
+     * in a fenced `json` block. The page's `<title>` becomes the H1 when the
+     * main content has none.
      */
     public function page(string $html): string
     {
@@ -46,13 +49,119 @@ class Converter
             return '';
         }
 
+        // Read before clean() drops every script.
+        $frontmatter = $this->frontmatter();
+        $jsonLd = $this->jsonLd();
+
         $markdown = $this->toMarkdown($this->clean($main));
 
         if (! preg_match('/^# /m', $markdown) && ($title = $this->first('//title'))) {
             $markdown = trim('# '.Format::text($title->textContent)."\n\n".$markdown);
         }
 
-        return $markdown === '' ? '' : $markdown."\n";
+        if ($jsonLd) {
+            $markdown .= "\n\n```json\n".implode("\n", $jsonLd)."\n```";
+        }
+
+        $markdown = trim($markdown);
+
+        return ($frontmatter ? $frontmatter."\n" : '').($markdown === '' ? '' : $markdown."\n");
+    }
+
+    /**
+     * YAML frontmatter from the page's metadata, only for the fields it has.
+     *
+     * Values are JSON strings, which YAML reads as double-quoted scalars, so a
+     * colon or quote in a title cannot break the block.
+     */
+    protected function frontmatter(): string
+    {
+        $offer = $this->offer();
+        $fields = [
+            'title' => $this->meta('og:title') ?: Format::text($this->first('//title')?->textContent),
+            'description' => $this->meta('description') ?: $this->meta('og:description'),
+            'image' => $this->meta('og:image'),
+            'url' => $this->first('//link[@rel="canonical"]')?->getAttribute('href') ?: $this->base,
+            'language' => Format::text($this->first('//html')?->getAttribute('lang')),
+            'modified' => $this->meta('article:modified_time'),
+            // Open Graph's product tags, else the page's schema.org Offer.
+            'price' => $this->meta('product:price:amount') ?: $offer['price'],
+            'currency' => $this->meta('product:price:currency') ?: $offer['priceCurrency'],
+            'availability' => $this->meta('product:availability') ?: $offer['availability'],
+            'sku' => $this->meta('product:retailer_item_id') ?: $offer['sku'],
+        ];
+
+        $lines = [];
+        foreach (array_filter($fields) as $name => $value) {
+            $lines[] = $name.': '.wp_json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        }
+
+        return $lines ? "---\n".implode("\n", $lines)."\n---\n" : '';
+    }
+
+    /**
+     * The content of a `<meta>` named by `name` or `property`.
+     */
+    protected function meta(string $name): string
+    {
+        $meta = $this->first(sprintf('//meta[@name=%1$s or @property=%1$s]', $this->literal($name)));
+
+        return Format::text($meta?->getAttribute('content'));
+    }
+
+    /**
+     * Price, currency, availability and SKU of the first schema.org Product on
+     * the page, as WooCommerce and Yoast describe a product page.
+     *
+     * @return array{price: string, priceCurrency: string, availability: string, sku: string}
+     */
+    protected function offer(): array
+    {
+        $offer = ['price' => '', 'priceCurrency' => '', 'availability' => '', 'sku' => ''];
+
+        foreach ($this->query('//script[@type="application/ld+json"]') as $script) {
+            $data = json_decode(trim($script->textContent), true);
+            $nodes = is_array($data) ? ($data['@graph'] ?? (array_is_list($data) ? $data : [$data])) : [];
+
+            foreach ($nodes as $node) {
+                if (! is_array($node) || ! in_array('Product', (array) ($node['@type'] ?? []), true)) {
+                    continue;
+                }
+
+                $offers = $node['offers'] ?? [];
+                $first = array_is_list($offers) ? ($offers[0] ?? []) : $offers;
+                // A price range (variable product) lists its bounds instead.
+                $price = $first['price'] ?? $first['lowPrice'] ?? $first['priceSpecification'][0]['price'] ?? '';
+
+                return [
+                    'price' => is_scalar($price) ? (string) $price : '',
+                    'priceCurrency' => (string) ($first['priceCurrency'] ?? $first['priceSpecification'][0]['priceCurrency'] ?? ''),
+                    // `https://schema.org/InStock` reads better as `InStock`.
+                    'availability' => basename((string) ($first['availability'] ?? '')),
+                    'sku' => (string) ($node['sku'] ?? ''),
+                ];
+            }
+        }
+
+        return $offer;
+    }
+
+    /**
+     * Every JSON-LD block on the page, re-encoded on one line each.
+     *
+     * @return string[]
+     */
+    protected function jsonLd(): array
+    {
+        $blocks = [];
+        foreach ($this->query('//script[@type="application/ld+json"]') as $script) {
+            $data = json_decode(trim($script->textContent), true);
+            if ($data !== null) {
+                $blocks[] = (string) wp_json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+        }
+
+        return $blocks;
     }
 
     protected function load(string $html): void

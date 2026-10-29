@@ -7,11 +7,89 @@ use WP_UnitTestCase;
 
 class ConverterTest extends WP_UnitTestCase
 {
-    protected function convert(string $main, string $head = '<title>Page title</title>'): string
+    protected function page(string $main, string $head = '<title>Page title</title>', string $lang = ''): string
     {
         return (new Converter('https://example.com/page/'))->page(
-            "<!doctype html><html><head>$head</head><body><header><a href=\"/\">Logo</a></header><main>$main</main><footer>Footer text</footer></body></html>"
+            "<!doctype html><html lang=\"$lang\"><head>$head</head><body><header><a href=\"/\">Logo</a></header><main>$main</main><footer>Footer text</footer></body></html>"
         );
+    }
+
+    /**
+     * The converted body, without the frontmatter.
+     */
+    protected function convert(string $main, string $head = '<title>Page title</title>'): string
+    {
+        return (string) preg_replace('/\A---\n.*?\n---\n\n?/s', '', $this->page($main, $head));
+    }
+
+    public function test_frontmatter_carries_the_page_metadata(): void
+    {
+        $markdown = $this->page(
+            '<h1>Hello</h1>',
+            '<title>Pumps: the guide</title><meta name="description" content="All about &quot;pumps&quot;."><meta property="og:image" content="https://example.com/a.jpg"><link rel="canonical" href="https://example.com/pumps/"><meta property="article:modified_time" content="2026-10-01T10:00:00+00:00">',
+            'fi'
+        );
+
+        $this->assertStringStartsWith(implode("\n", [
+            '---',
+            'title: "Pumps: the guide"',
+            'description: "All about \"pumps\"."',
+            'image: "https://example.com/a.jpg"',
+            'url: "https://example.com/pumps/"',
+            'language: "fi"',
+            'modified: "2026-10-01T10:00:00+00:00"',
+            '---',
+            '',
+            '# Hello',
+        ]), $markdown);
+    }
+
+    public function test_frontmatter_has_only_the_fields_the_page_has(): void
+    {
+        $markdown = $this->page('<h1>Hello</h1>');
+
+        $this->assertStringStartsWith("---\ntitle: \"Page title\"\nurl: \"https://example.com/page/\"\n---\n", $markdown);
+    }
+
+    public function test_frontmatter_has_product_fields_from_open_graph(): void
+    {
+        $markdown = $this->page('<h1>Pump</h1>', '<title>Pump</title><meta property="product:price:amount" content="129.00"><meta property="product:price:currency" content="EUR"><meta property="product:availability" content="in stock"><meta property="product:retailer_item_id" content="P-1">');
+
+        $this->assertStringContainsString("price: \"129.00\"\ncurrency: \"EUR\"\navailability: \"in stock\"\nsku: \"P-1\"\n---", $markdown);
+    }
+
+    /**
+     * WooCommerce's own structured data, as Yoast merges it into one graph.
+     */
+    public function test_frontmatter_falls_back_to_the_schema_org_offer(): void
+    {
+        $graph = wp_json_encode(['@context' => 'https://schema.org', '@graph' => [
+            ['@type' => 'WebPage', 'name' => 'Pump'],
+            ['@type' => 'Product', 'sku' => 'P-1', 'offers' => [[
+                '@type' => 'Offer', 'price' => '129.00', 'priceCurrency' => 'EUR', 'availability' => 'https://schema.org/InStock',
+            ]]],
+        ]]);
+        $markdown = $this->page('<h1>Pump</h1>', '<title>Pump</title><script type="application/ld+json">'.$graph.'</script>');
+
+        $this->assertStringContainsString("price: \"129.00\"\ncurrency: \"EUR\"\navailability: \"InStock\"\nsku: \"P-1\"\n---", $markdown);
+    }
+
+    public function test_a_product_without_a_price_has_no_price_fields(): void
+    {
+        $graph = wp_json_encode(['@type' => 'Product', 'name' => 'Window', 'offers' => []]);
+        $markdown = $this->page('<h1>Window</h1>', '<title>Window</title><script type="application/ld+json">'.$graph.'</script>');
+
+        $this->assertStringNotContainsString('price:', $markdown);
+    }
+
+    public function test_json_ld_is_appended_in_a_fenced_block(): void
+    {
+        $markdown = $this->page(
+            '<p>Body</p><script type="application/ld+json">{"@type": "Product", "name": "Pump"}</script>',
+            '<title>T</title><script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization"}</script><script type="application/ld+json">not json</script>'
+        );
+
+        $this->assertStringEndsWith("Body\n\n```json\n{\"@context\":\"https://schema.org\",\"@type\":\"Organization\"}\n{\"@type\":\"Product\",\"name\":\"Pump\"}\n```\n", $markdown);
     }
 
     public function test_only_the_main_content_is_converted(): void
