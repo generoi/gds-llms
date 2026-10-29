@@ -4,7 +4,6 @@ namespace GeneroWP\Llms\Integrations;
 
 use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Markdown\Dom;
-use GeneroWP\Llms\Markdown\Listings;
 
 /**
  * FacetWP prints each facet as an empty placeholder and fills it with
@@ -22,26 +21,12 @@ class FacetWP
     }
 
     /**
-     * From here on, see expandListing(). Not before wp_loaded: FacetWP builds
-     * FWP()->request on init, and queries run before it -- ACF loading its
-     * post types, say -- are not its listing.
+     * Whether FacetWP filters this query: the main one, or one a listing
+     * block flags. Only once FacetWP has initialised (see Listings::register()).
      */
-    public static function expandListings(): void
+    public static function isListing(\WP_Query $query): bool
     {
-        add_action('pre_get_posts', [self::class, 'expandListing']);
-    }
-
-    /**
-     * The listing FacetWP filters -- which may be a block's own query, not
-     * the main one -- in markdown-sized pages (see Listings). Before FacetWP's
-     * own pre_get_posts (999) captures the query, so the result count and
-     * pager it renders follow.
-     */
-    public static function expandListing(\WP_Query $query): void
-    {
-        if (self::isActive() && FWP()->request->is_main_query($query)) {
-            Listings::expand($query);
-        }
+        return self::isActive() && FWP()->request->is_main_query($query);
     }
 
     /**
@@ -81,7 +66,7 @@ class FacetWP
         // FacetWP's counts widget: a reader of one page cannot know otherwise.
         if (isset($output['settings']['pager']['total_rows'])) {
             $pager = $output['settings']['pager'];
-            $count = '<p>'.esc_html(Listings::countText((int) $pager['total_rows'], (int) ($pager['page'] ?? 1), (int) ($pager['total_pages'] ?? 1))).'</p>';
+            $count = '<p>'.esc_html(Format::resultCount((int) $pager['total_rows'], (int) ($pager['page'] ?? 1), (int) ($pager['total_pages'] ?? 1))).'</p>';
             $html = preg_replace_callback('#<div class="[^"]*\bfacetwp-template\b#', fn (array $match) => $count.$match[0], $html, 1)
                 ?? throw new \RuntimeException(sprintf('Adding the FacetWP result count failed: %s', preg_last_error_msg()));
         }

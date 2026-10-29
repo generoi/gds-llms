@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Markdown;
 
+use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Integrations\WooCommerce;
 use GeneroWP\Llms\LlmsTxt\Document;
 use WP_Post;
@@ -56,7 +57,7 @@ class ArchiveSource
 
         // The title goes in <title>: the converter makes it the H1 unless the
         // introduction already has one.
-        $main = sprintf('%s<p>%s</p>', $intro, esc_html(Listings::countText((int) $query->found_posts, $page, $pages)));
+        $main = sprintf('%s<p>%s</p>', $intro, esc_html(Format::resultCount((int) $query->found_posts, $page, $pages)));
         $main .= $items ? '<ul>'.$items.'</ul>' : '';
 
         if ($pages > 1) {

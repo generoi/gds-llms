@@ -10,6 +10,8 @@ class ListingsTest extends WP_UnitTestCase
 {
     protected int $category;
 
+    protected Listings $listings;
+
     public function set_up(): void
     {
         parent::set_up();
@@ -17,12 +19,13 @@ class ListingsTest extends WP_UnitTestCase
         $this->set_permalink_structure('/%postname%/');
         update_option('posts_per_page', 3);
         $this->category = self::factory()->category->create(['name' => 'News']);
+        $this->listings = new Listings;
     }
 
     public function tear_down(): void
     {
-        remove_action('pre_get_posts', [Listings::class, 'expandMainQuery']);
-        remove_filter('render_block_data', [Listings::class, 'expandQueryBlock']);
+        remove_action('pre_get_posts', [$this->listings, 'expandQuery']);
+        remove_filter('render_block_data', [$this->listings, 'expandQueryBlock']);
 
         parent::tear_down();
     }
@@ -46,7 +49,7 @@ class ListingsTest extends WP_UnitTestCase
     public function test_an_archive_lists_up_to_a_hundred_per_page(): void
     {
         $this->posts(12);
-        Listings::register();
+        $this->listings->register();
 
         $this->go_to(get_category_link($this->category));
 
@@ -56,7 +59,7 @@ class ListingsTest extends WP_UnitTestCase
     public function test_a_paged_query_loop_lists_up_to_a_hundred_per_page(): void
     {
         $this->posts(12);
-        Listings::register();
+        $this->listings->register();
 
         $this->assertSame(12, substr_count(do_blocks($this->queryLoop(true)), 'wp-block-post-title'));
     }
@@ -68,9 +71,39 @@ class ListingsTest extends WP_UnitTestCase
     public function test_a_query_loop_without_a_pager_keeps_its_size(): void
     {
         $this->posts(12);
-        Listings::register();
+        $this->listings->register();
 
         $this->assertSame(3, substr_count(do_blocks($this->queryLoop(false)), 'wp-block-post-title'));
+    }
+
+    /**
+     * A site sets the size per listing, or keeps one as the HTML page has it.
+     */
+    public function test_the_page_size_is_filterable_per_listing(): void
+    {
+        $this->posts(12);
+        $this->listings->register();
+        $size = fn (int $perPage, $listing) => is_array($listing) ? 3 : 5;
+
+        add_filter('gds/llms/markdown_per_page', $size, 10, 2);
+        $this->go_to(get_category_link($this->category));
+        $loop = do_blocks($this->queryLoop(true));
+        remove_filter('gds/llms/markdown_per_page', $size);
+
+        $this->assertCount(5, $GLOBALS['wp_query']->posts);
+        $this->assertSame(3, substr_count($loop, 'wp-block-post-title'));
+    }
+
+    public function test_an_unlimited_listing_stays_unlimited(): void
+    {
+        $query = new \WP_Query;
+        $query->set('posts_per_page', -1);
+        $query->is_archive = true;
+        $GLOBALS['wp_the_query'] = $query;
+
+        $this->listings->expandQuery($query);
+
+        $this->assertSame(-1, $query->get('posts_per_page'));
     }
 
     public function test_an_archive_has_markdown_in_content_mode(): void
@@ -128,7 +161,6 @@ class ListingsTest extends WP_UnitTestCase
         $this->go_to(get_permalink($page));
         set_query_var('mapped_post_archive', 'post');
 
-        $this->assertNull((new Markdown)->listingQuery(), 'Still a page, not an archive.');
         $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n4 results.", (new Markdown)->renderContent(get_post($page)));
     }
 

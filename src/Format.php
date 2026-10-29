@@ -79,6 +79,21 @@ class Format
         return str_replace([' ', '(', ')'], ['%20', '%28', '%29'], esc_url_raw($url));
     }
 
+    /**
+     * "64 results, page 1 of 8." -- one page of a listing cannot say how long
+     * the listing is.
+     */
+    public static function resultCount(int $total, int $page, int $pages): string
+    {
+        $text = sprintf('%d %s', $total, $total === 1 ? 'result' : 'results');
+
+        if ($pages > 1) {
+            $text .= sprintf(', page %d of %d', $page, $pages);
+        }
+
+        return $text.'.';
+    }
+
     public static function truncate(string $value, int $length = self::MAX_DESCRIPTION): string
     {
         if ($value === '' || mb_strlen($value) <= $length) {

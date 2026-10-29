@@ -122,7 +122,7 @@ class FacetWPTest extends WP_UnitTestCase
         $other->set('posts_per_page', 8);
 
         foreach ([$listing, $long, $other] as $query) {
-            FacetWP::expandListing($query);
+            (new Listings)->expandQuery($query);
         }
 
         $this->assertSame(Listings::PER_PAGE, $listing->get('posts_per_page'));

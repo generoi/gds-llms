@@ -3,6 +3,7 @@
 namespace GeneroWP\Llms\Markdown;
 
 use Genero\Sage\CacheTags\Tags\CoreTags;
+use GeneroWP\Llms\Integrations\ArchivePages;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
@@ -45,6 +46,16 @@ class Endpoint
 
     protected bool $requested = false;
 
+    protected Listings $listings;
+
+    protected ArchivePages $archivePages;
+
+    public function __construct()
+    {
+        $this->listings = new Listings;
+        $this->archivePages = new ArchivePages($this->listings);
+    }
+
     public function register(): void
     {
         $this->requested = $this->rewriteRequestUri();
@@ -53,8 +64,7 @@ class Endpoint
             // `/about.md` is rewritten to `/about`, which canonical redirect
             // would bounce to `/about/` -- the HTML page.
             add_filter('redirect_canonical', '__return_false');
-            Listings::register();
-            add_action('wp_loaded', [FacetWP::class, 'expandListings']);
+            add_action('wp_loaded', [$this->listings, 'register']);
             // Last, so every gate on template_redirect has had its say.
             add_action('template_redirect', [$this, 'start'], PHP_INT_MAX);
         } else {
@@ -207,38 +217,35 @@ class Endpoint
             $this->notFound();
         }
 
-        if (self::mode() === self::MODE_CONTENT && ($listing = $this->listingQuery())) {
-            // A listing's URL without the query string, like a post's
-            // permalink: the path is what identifies it.
-            $url = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
-            $markdown = $this->renderListing($listing, $url);
-            $this->sendHeaders($markdown, $url);
-            CacheTags::send(fn () => [CoreTags::query($listing), CoreTags::queriedObject()], self::url($url));
-            echo $markdown;
-            exit;
-        }
-
         if (self::mode() === self::MODE_CONTENT) {
-            $post = get_queried_object();
-            if (! $post instanceof WP_Post) {
-                throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
-            }
+            global $wp_query;
 
-            // The post's own URLs rather than the request's: agents arrive with
+            // The page's own URL rather than the request's: agents arrive with
             // tracking parameters (`?utm_source=chatgpt.com`), and a query string
             // leaves url() nothing to save the cache tags under, so an edit would
             // never purge whatever that request put in the CDN.
-            $permalink = (string) get_permalink($post);
+            if (is_singular()) {
+                $post = get_queried_object();
+                if (! $post instanceof WP_Post) {
+                    throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
+                }
+
+                $url = (string) get_permalink($post);
+                // A page standing in for an archive changes with its post type.
+                $tags = fn () => [CoreTags::posts([$post]), ($type = $this->archivePages->postType()) ? CoreTags::archive($type) : []];
+            } else {
+                $url = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
+                $tags = fn () => [CoreTags::query($wp_query), CoreTags::queriedObject()];
+            }
 
             // Plain permalinks (`/?page_id=2`) have no path to give a markdown URL.
-            if (self::url($permalink) === '') {
+            if (self::url($url) === '') {
                 $this->notFound();
             }
 
-            $markdown = $this->renderContent($post);
-            $this->sendHeaders($markdown, $permalink);
-            // A page standing in for an archive changes with its post type.
-            CacheTags::send(fn () => [CoreTags::posts([$post]), self::mappedPostType() ? CoreTags::archive(self::mappedPostType()) : []], self::url($permalink));
+            $markdown = is_singular() ? $this->renderContent($post) : $this->renderListing($wp_query, $url);
+            $this->sendHeaders($markdown, $url);
+            CacheTags::send($tags, self::url($url));
             echo $markdown;
             exit;
         }
@@ -256,63 +263,13 @@ class Endpoint
     /**
      * The post content, converted as if it were a page's main content titled
      * with the post title.
-     *
-     * A page standing in for an archive has its listing drawn by its template
-     * -- unless its content already lists, a FacetWP or Query Loop block. So
-     * the listing is built here only when the content links none of the
-     * posts it would list; otherwise it would appear twice.
      */
     public function renderContent(WP_Post $post): string
     {
         $permalink = (string) get_permalink($post);
         $html = FacetWP::fill((new ContentSource)->html($post), $permalink);
 
-        if ($postType = self::mappedPostType()) {
-            $listing = new WP_Query([
-                'post_type' => $postType,
-                'paged' => max(1, (int) get_query_var('paged')),
-                'posts_per_page' => Listings::PER_PAGE,
-            ]);
-
-            if (! self::linksAny($html, array_slice($listing->posts, 0, 5))) {
-                $html = (new ArchiveSource)->html($listing, $permalink);
-            }
-        }
-
-        return (new Converter($permalink))->page($html);
-    }
-
-    /**
-     * @param  array<int, WP_Post|int>  $posts
-     */
-    protected static function linksAny(string $html, array $posts): bool
-    {
-        foreach ($posts as $post) {
-            if (str_contains($html, 'href="'.esc_url((string) get_permalink($post)).'"')) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * The query a content-mode listing lists, or null on a single page.
-     */
-    public function listingQuery(): ?WP_Query
-    {
-        global $wp_query;
-
-        return is_singular() ? null : $wp_query;
-    }
-
-    /**
-     * The post type a page stands in for as its archive (sage-archive-pages),
-     * or '' -- the page's template lists it.
-     */
-    public static function mappedPostType(): string
-    {
-        return is_singular() ? (string) get_query_var('mapped_post_archive') : '';
+        return (new Converter($permalink))->page($this->archivePages->withListing($html, $permalink));
     }
 
     public function renderListing(WP_Query $query, string $url): string

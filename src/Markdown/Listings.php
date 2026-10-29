@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Markdown;
 
+use GeneroWP\Llms\Integrations\FacetWP;
 use WP_Query;
 
 /**
@@ -14,29 +15,28 @@ class Listings
 {
     public const PER_PAGE = 100;
 
-    public static function register(): void
+    /**
+     * On wp_loaded: FacetWP builds FWP()->request on init, and the queries
+     * run before then -- ACF loading its post types, say -- are no listing.
+     */
+    public function register(): void
     {
-        add_action('pre_get_posts', [self::class, 'expandMainQuery']);
-        add_filter('render_block_data', [self::class, 'expandQueryBlock']);
+        add_action('pre_get_posts', [$this, 'expandQuery']);
+        add_filter('render_block_data', [$this, 'expandQueryBlock']);
     }
 
     /**
-     * An archive's main query: the blog, a category or tag, a post type
-     * archive, a shop.
+     * An archive's main query -- the blog, a category, a post type archive, a
+     * shop -- or the listing FacetWP filters, which may be a block's own.
+     * Before FacetWP's own pre_get_posts (999) captures it, so the result
+     * count and pager FacetWP renders follow.
      */
-    public static function expandMainQuery(WP_Query $query): void
+    public function expandQuery(WP_Query $query): void
     {
-        if ($query->is_main_query() && ($query->is_home() || $query->is_archive()) && ! $query->is_feed()) {
-            self::expand($query);
-        }
-    }
+        $archive = $query->is_main_query() && ($query->is_home() || $query->is_archive()) && ! $query->is_feed();
 
-    public static function expand(WP_Query $query): void
-    {
-        $perPage = (int) ($query->get('posts_per_page') ?: get_option('posts_per_page'));
-
-        if ($perPage > 0 && $perPage < self::PER_PAGE) {
-            $query->set('posts_per_page', self::PER_PAGE);
+        if ($archive || FacetWP::isListing($query)) {
+            $query->set('posts_per_page', $this->perPage((int) ($query->get('posts_per_page') ?: get_option('posts_per_page')), $query));
         }
     }
 
@@ -48,43 +48,38 @@ class Listings
      * @param  array<string, mixed>  $block
      * @return array<string, mixed>
      */
-    public static function expandQueryBlock(array $block): array
+    public function expandQueryBlock(array $block): array
     {
-        if (($block['blockName'] ?? '') !== 'core/query' || ! empty($block['attrs']['query']['inherit']) || ! self::hasPagination($block['innerBlocks'] ?? [])) {
-            return $block;
-        }
-
-        $perPage = (int) ($block['attrs']['query']['perPage'] ?? get_option('posts_per_page'));
-
-        if ($perPage > 0 && $perPage < self::PER_PAGE) {
-            $block['attrs']['query']['perPage'] = self::PER_PAGE;
+        if (($block['blockName'] ?? '') === 'core/query' && empty($block['attrs']['query']['inherit']) && $this->hasPagination($block['innerBlocks'] ?? [])) {
+            $block['attrs']['query']['perPage'] = $this->perPage((int) ($block['attrs']['query']['perPage'] ?? get_option('posts_per_page')), $block);
         }
 
         return $block;
     }
 
     /**
-     * "64 results, page 1 of 8." -- one page of a listing cannot say how long
-     * the listing is.
+     * @param  WP_Query|array<string, mixed>  $listing
      */
-    public static function countText(int $total, int $page, int $pages): string
+    public function perPage(int $perPage, WP_Query|array $listing): int
     {
-        $text = sprintf('%d %s', $total, $total === 1 ? 'result' : 'results');
-
-        if ($pages > 1) {
-            $text .= sprintf(', page %d of %d', $page, $pages);
-        }
-
-        return $text.'.';
+        /**
+         * How many results a markdown page of a listing has: PER_PAGE, or the
+         * listing's own size where that is larger or unlimited (-1). Return
+         * the listing's own size to leave it as the HTML page has it.
+         *
+         * @param  int  $perPage
+         * @param  WP_Query|array  $listing  the query, or the Query Loop block
+         */
+        return (int) apply_filters('gds/llms/markdown_per_page', $perPage > 0 ? max($perPage, self::PER_PAGE) : $perPage, $listing);
     }
 
     /**
      * @param  array<int, array<string, mixed>>  $blocks
      */
-    protected static function hasPagination(array $blocks): bool
+    protected function hasPagination(array $blocks): bool
     {
         foreach ($blocks as $block) {
-            if (($block['blockName'] ?? '') === 'core/query-pagination' || self::hasPagination($block['innerBlocks'] ?? [])) {
+            if (($block['blockName'] ?? '') === 'core/query-pagination' || $this->hasPagination($block['innerBlocks'] ?? [])) {
                 return true;
             }
         }

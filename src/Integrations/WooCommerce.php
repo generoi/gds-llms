@@ -26,11 +26,13 @@ class WooCommerce
 
     /**
      * A product's price as the shop displays it (with or without tax, as it
-     * is set up) for a listing line: "129,00 €", "from 49,00 €" for a variable
-     * product. '' for anything else, and for a product sold on quote.
+     * is set up) for a listing line: "129,00 €", or WooCommerce's own range
+     * for a variable product. '' for anything else, and for a product sold on
+     * quote.
      *
-     * From the price itself rather than get_price_html(), whose sale markup
-     * reads "Original price was: … Current price is: …" for screen readers.
+     * Built from WooCommerce's formatters rather than get_price_html(), whose
+     * sale markup adds "Original price was: … Current price is: …" for screen
+     * readers.
      */
     public static function priceText(WP_Post $post): string
     {
@@ -38,9 +40,14 @@ class WooCommerce
             return '';
         }
 
-        $price = Format::text(wc_price(wc_get_price_to_display($product)));
+        if ($product instanceof \WC_Product_Variable) {
+            $min = (string) $product->get_variation_price('min', true);
+            $max = (string) $product->get_variation_price('max', true);
 
-        return $product->is_type('variable') ? 'from '.$price : $price;
+            return Format::text($min === $max ? wc_price((float) $min) : wc_format_price_range($min, $max));
+        }
+
+        return Format::text(wc_price(wc_get_price_to_display($product)));
     }
 
     /**
