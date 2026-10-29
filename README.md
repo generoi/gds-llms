@@ -82,8 +82,9 @@ After changing a string:
 npx wp-env run cli wp i18n make-pot wp-content/mu-plugins/gds-llms wp-content/mu-plugins/gds-llms/resources/lang/gds-llms.pot --domain=gds-llms --include=src
 # update the .po files, then
 npx wp-env run cli wp i18n make-mo wp-content/mu-plugins/gds-llms/resources/lang
-npx wp-env run cli wp i18n make-php wp-content/mu-plugins/gds-llms/resources/lang
 ```
+
+Only `.mo` files are shipped, not `.l10n.php`: a site's linter (pint) runs over its mu-plugins directory and would fail the generated PHP.
 
 ## Installation
 

@@ -1,6 +1,0 @@
-{
-    "preset": "laravel",
-    "exclude": [
-        "resources/lang"
-    ]
-}
