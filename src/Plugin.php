@@ -35,5 +35,6 @@ class Plugin
 
         (new LlmsTxt)->register();
         (new Markdown)->register();
+        (new Robots)->register();
     }
 }

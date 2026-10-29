@@ -170,6 +170,8 @@ class LlmsTxt
         header('Content-Type: text/plain; charset=utf-8');
         header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
+        header('Content-Signal: '.Robots::contentSignal());
+        header('Content-Usage: '.Robots::contentUsage());
 
         CacheTags::send(fn () => [
             CoreTags::posts($response['posts']),
