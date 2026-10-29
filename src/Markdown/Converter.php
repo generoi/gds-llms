@@ -78,6 +78,7 @@ class Converter
         $this->replaceIframes($root);
         $this->cleanImages($root);
         $this->cleanLinks($root);
+        $this->removeEmptyListItems($root);
 
         $html = '';
         foreach ($root->childNodes as $child) {
@@ -268,6 +269,22 @@ class Converter
                 $this->unwrap($link);
             }
         }
+    }
+
+    /**
+     * A list item left with nothing to announce -- a placeholder a script
+     * fills in (FacetWP's facets), or one that only held a control removed
+     * above -- reads as a bare bullet; a list of nothing but those, as nothing.
+     */
+    protected function removeEmptyListItems(DOMElement $root): void
+    {
+        foreach ($this->dom->query('.//li', $root) as $item) {
+            if (Format::text($item->textContent) === '' && ! $this->dom->first('.//img', $item)) {
+                $item->parentNode?->removeChild($item);
+            }
+        }
+
+        $this->dom->remove('.//ul[not(li)]|.//ol[not(li)]', $root);
     }
 
     protected function absolute(string $url): string
