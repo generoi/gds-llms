@@ -256,6 +256,45 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringContainsString("## Business\n- [Fibre](https://example.com/business/fibre/)\n- [Support](https://example.com/business/support/)", $body);
     }
 
+    /**
+     * WordPress keeps a draft or private page in its menu; listing it would put
+     * its excerpt in a document cached for everyone.
+     */
+    public function test_unpublished_menu_targets_are_not_listed(): void
+    {
+        $draft = self::factory()->post->create(['post_type' => 'page', 'post_status' => 'draft', 'post_title' => 'Coming soon', 'post_excerpt' => 'Unannounced product.']);
+        $private = self::factory()->post->create(['post_type' => 'page', 'post_status' => 'private', 'post_title' => 'Board', 'post_excerpt' => 'Board minutes.']);
+
+        $menu = wp_create_nav_menu('Main');
+        foreach ([$draft, $private] as $page) {
+            $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type']);
+        }
+        $this->customItem($menu, 'About', 'https://example.com/about');
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new Document)->build('');
+
+        $this->assertStringContainsString('[About]', $body);
+        foreach (['Coming soon', 'Unannounced product.', 'Board', 'Board minutes.'] as $text) {
+            $this->assertStringNotContainsString($text, $body);
+        }
+    }
+
+    public function test_a_password_protected_page_is_listed_without_its_excerpt(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Partners', 'post_password' => 'secret', 'post_excerpt' => 'Partner price list.']);
+
+        $menu = wp_create_nav_menu('Main');
+        $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type']);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new Document)->build('');
+
+        $this->assertStringContainsString('- [Partners]('.get_permalink($page).")\n", $body);
+        $this->assertStringNotContainsString('Partner price list.', $body);
+        $this->assertStringNotContainsString('no excerpt', $body);
+    }
+
     public function test_menus_are_excluded_by_location(): void
     {
         $intra = wp_create_nav_menu('Intranet');
@@ -285,6 +324,26 @@ class LlmsTxtTest extends WP_UnitTestCase
 
         $this->assertStringContainsString("## Catalogue\n- [Pumps](", $body);
         $this->assertStringNotContainsString('Hand pumps', $body);
+    }
+
+    /**
+     * A site's own product taxonomy counts its own post type, not WooCommerce's.
+     */
+    public function test_catalogue_sentence_counts_the_taxonomy_own_posts(): void
+    {
+        register_post_type('machine', ['public' => true]);
+        register_taxonomy('machine_kind', 'machine', ['public' => true, 'rewrite' => ['slug' => 'machines'], 'label' => 'Kinds']);
+        self::factory()->post->create(['post_type' => 'page', 'post_name' => 'machines', 'post_title' => 'Machines']);
+        self::factory()->post->create_many(2, ['post_type' => 'machine']);
+        $filter = fn () => ['machine_kind'];
+
+        add_filter('gds/llms_txt/taxonomies', $filter);
+        $body = (new Document)->build('');
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('machine_kind');
+        unregister_post_type('machine');
+
+        $this->assertStringContainsString('The 2 products are organised under [Machines](', $body);
     }
 
     public function test_a_catalogue_without_public_archives_is_not_listed(): void
@@ -429,6 +488,17 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->go_to(home_url('/llms.txt'));
 
         $this->assertSame('1', get_query_var(LlmsTxt::QUERY_VAR));
+        $this->assertTrue((new LlmsTxt)->isRequested());
+    }
+
+    public function test_the_query_var_alone_does_not_serve_llms_txt(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page']);
+        flush_rewrite_rules(false);
+
+        $this->go_to(add_query_arg(LlmsTxt::QUERY_VAR, '1', get_permalink($page)));
+
+        $this->assertFalse((new LlmsTxt)->isRequested());
     }
 
     /**

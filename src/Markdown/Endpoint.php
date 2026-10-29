@@ -196,10 +196,7 @@ class Endpoint
     public function start(): void
     {
         if (! $this->isAvailable()) {
-            status_header(404);
-            header('Content-Type: text/plain; charset=utf-8');
-            echo "Not found\n";
-            exit;
+            $this->notFound();
         }
 
         if (self::mode() === self::MODE_CONTENT) {
@@ -208,16 +205,27 @@ class Endpoint
                 throw new \LogicException('gds/llms/markdown_available allowed a page without post content in content mode.');
             }
 
+            // The post's own URLs rather than the request's: agents arrive with
+            // tracking parameters (`?utm_source=chatgpt.com`), and a query string
+            // leaves url() nothing to save the cache tags under, so an edit would
+            // never purge whatever that request put in the CDN.
+            $permalink = (string) get_permalink($post);
+
+            // Plain permalinks (`/?page_id=2`) have no path to give a markdown URL.
+            if (self::url($permalink) === '') {
+                $this->notFound();
+            }
+
             $markdown = $this->renderContent($post);
-            $this->sendHeaders($markdown);
-            CacheTags::send(fn () => CoreTags::posts([$post]), self::url($this->pageUrl()));
+            $this->sendHeaders($markdown, $permalink);
+            CacheTags::send(fn () => CoreTags::posts([$post]), self::url($permalink));
             echo $markdown;
             exit;
         }
 
         (new PageSource)->start(function (string $html): string {
             $markdown = (new Converter($this->pageUrl()))->page($html);
-            $this->sendHeaders($markdown);
+            $this->sendHeaders($markdown, $this->pageUrl());
             CacheTags::saveUrl(self::url($this->pageUrl()));
 
             return $markdown;
@@ -233,14 +241,22 @@ class Endpoint
         return (new Converter((string) get_permalink($post)))->page((new ContentSource)->html($post));
     }
 
-    protected function sendHeaders(string $markdown): void
+    protected function notFound(): never
+    {
+        status_header(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo "Not found\n";
+        exit;
+    }
+
+    protected function sendHeaders(string $markdown, string $canonical): void
     {
         status_header(200);
         header('Content-Type: text/markdown; charset=utf-8');
         // The body is decoded text, so markup quoted in a page must never be sniffed as HTML.
         header('X-Content-Type-Options: nosniff');
         header('X-Robots-Tag: noindex');
-        header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($this->pageUrl())));
+        header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($canonical)));
         header('Content-Signal: '.Robots::contentSignal());
         header('Content-Usage: '.Robots::contentUsage());
         // Cloudflare's estimate of what the response costs a model to read,

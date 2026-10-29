@@ -151,21 +151,27 @@ class Menus
         $links = [];
         $url = $this->absoluteUrl((string) $item->url);
         $key = untrailingslashit($url);
+        $postId = $item->type === 'post_type' ? (int) $item->object_id : 0;
 
-        if ($url !== '' && ! isset($seen[$key])) {
+        if ($postId) {
+            $this->posts[] = $postId;
+        }
+
+        // WordPress only drops a menu item whose page is trashed. A draft,
+        // private or scheduled one stays in the menu, and its excerpt would end
+        // up in a document cached for every visitor.
+        $public = ! $postId || is_post_publicly_viewable($postId);
+
+        if ($url !== '' && $public && ! isset($seen[$key])) {
             $seen[$key] = true;
             $title = Format::text($item->title);
-            $postId = $item->type === 'post_type' ? (int) $item->object_id : 0;
-
-            if ($postId) {
-                $this->posts[] = $postId;
-            }
 
             $links[] = [
                 // A label of only symbols (an `@` icon for an email link) reads as nothing.
                 'title' => preg_match('/[\p{L}\p{N}]/u', $title) ? $title : Format::replace('#^(mailto:|tel:|https?://)#', '', $url),
                 'url' => $url,
-                'description' => $postId ? Document::description($postId) : '',
+                // A password-protected page's excerpt is WordPress' "There is no excerpt" notice.
+                'description' => $postId && ! post_password_required($postId) ? Document::description($postId) : '',
             ];
         }
 

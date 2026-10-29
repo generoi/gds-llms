@@ -61,6 +61,11 @@ class CacheTags
         }
 
         $cacheTags->add(SiteTags::sites(), $tags());
+
+        if ($url === '') {
+            throw new \LogicException('Cache tags sent without a URL to save them under.');
+        }
+
         $cacheTags->save($url);
 
         if ($cacheTags->httpHeader) {
