@@ -38,6 +38,7 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | `gds/llms/markdown_listing_item` | link, product price, description | In a listing this package builds (archives in `content` mode), one post's line as HTML: add its date, author or a field. Gets the `WP_Post`. |
 | `gds/llms/markdown_per_page` | 100, or the listing's own size where larger or unlimited | Results per markdown page of a listing; gets the listing's `WP_Query`, or the Query Loop block. Return the size it has on the HTML page to leave it as it is. |
 | `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |
+| `gds/llms/cache_control` | `public, max-age=0, s-maxage=3600` | `Cache-Control` for llms.txt and markdown responses that have none yet (a theme's own, or WordPress' no-cache headers, are left alone); never sent to logged-in users or previews. Return `''` to send none. |
 
 ```php
 // What the business does, which nothing on the site states in one sentence.
@@ -94,7 +95,7 @@ wp plugin activate gds-llms
 
 Published on [Packagist](https://packagist.org/packages/generoi/gds-llms). Installs into `plugins/` (Composer type `wordpress-plugin`).
 
-**On Kinsta, exclude `txt` and `md` from the CDN** (MyKinsta → the site → CDN → exclude file extensions), then purge it (`wp kinsta cache purge --cdn`). Kinsta's CDN treats both extensions as static files and caches them for a year (`max-age=31536000`) whatever the response says, so `llms.txt` and every markdown page would keep serving their first version through edits and deploys. Excluded, they are cached like any other page.
+**On Kinsta, exclude `txt` and `md` from the CDN** (MyKinsta → the site → CDN → exclude file extensions), then purge it (`wp kinsta cache purge --cdn`). Kinsta's CDN treats both extensions as static files and caches them for a year (`max-age=31536000`) whatever the response says, so `llms.txt` and every markdown page would keep serving their first version through edits and deploys. Excluded, they are cached like any other page: Kinsta's page cache, and its edge cache through the `Cache-Control` this package sends (the policy Kinsta itself gives HTML pages, which it does not add to `text/plain` or `text/markdown`).
 
 ## Development
 

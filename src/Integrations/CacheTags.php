@@ -38,7 +38,7 @@ class CacheTags
      * `cachetags:flush` purges, and deploys run a flush after every release --
      * without it a code change here would sit in the CDN until it expired.
      *
-     * Cache-Control is left to the theme, as it is for every other page.
+     * Cache-Control is CacheControl's: the theme's where it sets one.
      *
      * @param  callable(): array<mixed>  $tags  only called when sage-cachetags is running
      */

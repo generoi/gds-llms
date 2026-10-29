@@ -3,6 +3,7 @@
 namespace GeneroWP\Llms\LlmsTxt;
 
 use Genero\Sage\CacheTags\Tags\CoreTags;
+use GeneroWP\Llms\CacheControl;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\Polylang;
 use GeneroWP\Llms\Integrations\RankMath;
@@ -154,6 +155,7 @@ class Endpoint
         header('X-Robots-Tag: noindex');
         header('Content-Signal: '.Robots::contentSignal());
         header('Content-Usage: '.Robots::contentUsage());
+        CacheControl::send();
 
         CacheTags::send(fn () => [
             CoreTags::posts($response['posts']),

@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Markdown;
 
+use GeneroWP\Llms\CacheControl;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
 use GeneroWP\Llms\Robots;
@@ -309,6 +310,7 @@ class Endpoint
         header(sprintf('Link: <%s>; rel="canonical"', esc_url_raw($canonical)));
         header('Content-Signal: '.Robots::contentSignal());
         header('Content-Usage: '.Robots::contentUsage());
+        CacheControl::send();
         // Cloudflare's estimate of what the response costs a model to read,
         // which agents can use to decide whether to fetch it in full.
         header(sprintf('X-Markdown-Tokens: %d', (int) ceil(mb_strlen($markdown) / 4)));
