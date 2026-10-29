@@ -641,7 +641,12 @@ class LlmsTxt
          */
         $taxonomies = (array) apply_filters('gds/llms_txt/taxonomies', ['product_cat']);
 
-        return array_values(array_filter($taxonomies, 'taxonomy_exists'));
+        // A taxonomy registered without public archives (`publicly_queryable`
+        // off) would be a list of links that all 404.
+        return array_values(array_filter(
+            $taxonomies,
+            fn (string $taxonomy) => taxonomy_exists($taxonomy) && is_taxonomy_viewable($taxonomy),
+        ));
     }
 
     /**

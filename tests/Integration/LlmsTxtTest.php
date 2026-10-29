@@ -286,6 +286,21 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('Hand pumps', $body);
     }
 
+    public function test_a_catalogue_without_public_archives_is_not_listed(): void
+    {
+        register_taxonomy('catalogue', 'post', ['public' => true, 'publicly_queryable' => false, 'label' => 'Catalogue']);
+        $term = self::factory()->term->create(['taxonomy' => 'catalogue', 'name' => 'Pumps']);
+        wp_set_object_terms(self::factory()->post->create(), [$term], 'catalogue');
+        $filter = fn () => ['catalogue'];
+
+        add_filter('gds/llms_txt/taxonomies', $filter);
+        $body = (new LlmsTxt)->build('');
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('catalogue');
+
+        $this->assertStringNotContainsString('## Catalogue', $body);
+    }
+
     public function test_optional_section_links_the_sitemap(): void
     {
         $this->assertStringContainsString("## Optional\n- [Sitemap](".home_url('/wp-sitemap.xml').')', (new LlmsTxt)->build(''));
