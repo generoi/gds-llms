@@ -38,6 +38,16 @@ class ListingsTest extends WP_UnitTestCase
         return self::factory()->post->create_many($count, ['post_category' => [$this->category]]);
     }
 
+    /**
+     * The content-mode markdown of the page go_to() went to.
+     */
+    protected function markdown(): string
+    {
+        $endpoint = new Markdown;
+
+        return $endpoint->markdown($endpoint->source());
+    }
+
     protected function queryLoop(bool $pager): string
     {
         return '<!-- wp:query {"queryId":1,"query":{"perPage":3,"postType":"post","inherit":false}} --><div class="wp-block-query">'
@@ -113,12 +123,25 @@ class ListingsTest extends WP_UnitTestCase
         $url = get_category_link($this->category);
 
         $this->go_to($url);
-        $markdown = (new Markdown)->renderListing($GLOBALS['wp_query'], $url);
+        $markdown = $this->markdown();
 
         $this->assertTrue((new Markdown)->isAvailable());
         $this->assertStringContainsString('# Category: News', $markdown);
         $this->assertStringContainsString('2 results.', $markdown);
         $this->assertStringContainsString('- [Pumps arrive]('.get_permalink($first).'): New hand pumps in stock.', $markdown);
+    }
+
+    public function test_listing_items_are_filterable(): void
+    {
+        $post = self::factory()->post->create(['post_title' => 'Pumps arrive', 'post_date' => '2026-10-01 10:00:00', 'post_category' => [$this->category]]);
+        $date = fn (string $item, \WP_Post $post) => $item.' ('.get_the_date('Y-m-d', $post).')';
+
+        $this->go_to(get_category_link($this->category));
+        add_filter('gds/llms/markdown_listing_item', $date, 10, 2);
+        $markdown = $this->markdown();
+        remove_filter('gds/llms/markdown_listing_item', $date);
+
+        $this->assertMatchesRegularExpression('#^- \[Pumps arrive\]\('.preg_quote(get_permalink($post), '#').'\).* \(2026-10-01\)$#m', $markdown);
     }
 
     public function test_a_long_archive_links_its_pages(): void
@@ -127,7 +150,7 @@ class ListingsTest extends WP_UnitTestCase
         $url = get_category_link($this->category);
 
         $this->go_to($url);
-        $markdown = (new Markdown)->renderListing($GLOBALS['wp_query'], $url);
+        $markdown = $this->markdown();
 
         $this->assertStringContainsString('5 results, page 1 of 2.', $markdown);
         $this->assertStringContainsString('- [2]('.get_pagenum_link(2).')', $markdown);
@@ -144,9 +167,23 @@ class ListingsTest extends WP_UnitTestCase
         $this->posts(2);
 
         $this->go_to(get_permalink($page));
-        $markdown = (new Markdown)->renderListing($GLOBALS['wp_query'], (string) get_permalink($page));
 
-        $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n2 results.", $markdown);
+        $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n2 results.", $this->markdown());
+    }
+
+    /**
+     * The page in front of a listing is its introduction; a password keeps
+     * it out of the markdown as it does the page.
+     */
+    public function test_a_protected_posts_page_has_no_markdown(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_password' => 'secret', 'post_content' => '<p>Members only.</p>']);
+        update_option('show_on_front', 'page');
+        update_option('page_for_posts', $page);
+
+        $this->go_to(get_permalink($page));
+
+        $this->assertFalse((new Markdown)->isAvailable());
     }
 
     /**
@@ -161,7 +198,7 @@ class ListingsTest extends WP_UnitTestCase
         $this->go_to(get_permalink($page));
         set_query_var('mapped_post_archive', 'post');
 
-        $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n4 results.", (new Markdown)->renderContent(get_post($page)));
+        $this->assertStringContainsString("# Stories\n\nWhat we have done.\n\n4 results.", $this->markdown());
     }
 
     /**
@@ -175,7 +212,7 @@ class ListingsTest extends WP_UnitTestCase
 
         $this->go_to(get_permalink($page));
         set_query_var('mapped_post_archive', 'post');
-        $markdown = (new Markdown)->renderContent(get_post($page));
+        $markdown = $this->markdown();
 
         $this->assertStringContainsString('[Our story]', $markdown);
         $this->assertStringNotContainsString('results.', $markdown);

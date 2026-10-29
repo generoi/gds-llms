@@ -34,6 +34,7 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | `gds/llms/ai_policy` | `true` for each of `search`, `ai-input`, `ai-train`; `false` when the site discourages search engines | Decline a use: `ai-train` for model training, `ai-input` for AI search and answers to users' questions. |
 | `gds/llms/markdown_mode` | `content` | `page` for sites whose templates draw content from post meta, or gate content behind a login form in the template. |
 | `gds/llms/markdown_content` | the rendered post content | In `content` mode, add what the template renders outside the content, such as a product's price. |
+| `gds/llms/markdown_listing_item` | link, product price, description | In a listing this package builds (archives in `content` mode), one post's line as HTML: add its date, author or a field. Gets the `WP_Post`. |
 | `gds/llms/markdown_per_page` | 100, or the listing's own size where larger or unlimited | Results per markdown page of a listing; gets the listing's `WP_Query`, or the Query Loop block. Return the size it has on the HTML page to leave it as it is. |
 | `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |
 
