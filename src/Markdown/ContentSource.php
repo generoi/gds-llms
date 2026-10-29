@@ -26,7 +26,7 @@ class ContentSource implements Source
     }
 
     /**
-     * Rendered once: ArchivePages reads it before the endpoint converts it.
+     * Rendered once: PageListing reads it before the endpoint converts it.
      */
     public function html(): string
     {
