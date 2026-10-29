@@ -141,6 +141,21 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertSame(1, substr_count((new LlmsTxt)->build(''), '[About]'));
     }
 
+    public function test_a_url_is_listed_once_across_menus(): void
+    {
+        $primary = wp_create_nav_menu('Main');
+        $this->customItem($primary, 'About', 'https://example.com/about/');
+        $footer = wp_create_nav_menu('Footer');
+        $this->customItem($footer, 'About us', 'https://example.com/about');
+        $this->customItem($footer, 'Privacy', 'https://example.com/privacy');
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $primary, 'footer_navigation' => $footer]);
+
+        $body = (new LlmsTxt)->build('');
+
+        $this->assertStringNotContainsString('About us', $body);
+        $this->assertStringContainsString("## Footer\n- [Privacy](https://example.com/privacy)", $body);
+    }
+
     /**
      * Footer columns are usually `#` items with links under them, so they get
      * the column headings rather than the menu's name.

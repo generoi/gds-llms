@@ -456,11 +456,15 @@ class LlmsTxt
      * heading. Loose links are filed under the menu's own name, which is what the
      * client called it.
      *
+     * Each URL is listed once, where it first appears: footers mostly repeat the
+     * primary navigation, and a model gains nothing from reading it twice.
+     *
      * @return list<array{Section, Section[]}>
      */
     protected function menuSections(): array
     {
         $sections = [];
+        $seen = [];
 
         foreach ($this->menus() as $menuId) {
             $object = wp_get_nav_menu_object($menuId);
@@ -477,6 +481,13 @@ class LlmsTxt
                     continue;
                 }
 
+                $url = untrailingslashit((string) $item->url);
+
+                if (isset($seen[$url])) {
+                    continue;
+                }
+
+                $seen[$url] = true;
                 $line = Format::linkLine($item->title, $item->url, $this->menuItemDescription($item));
                 $root = $this->rootItem((int) $item->ID, $parents);
 
