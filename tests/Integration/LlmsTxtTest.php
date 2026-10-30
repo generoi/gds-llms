@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Tests\Integration;
 
+use GeneroWP\Llms\Integrations\Kinsta;
 use GeneroWP\Llms\LlmsTxt\Document;
 use GeneroWP\Llms\LlmsTxt\Endpoint as LlmsTxt;
 use WP_UnitTestCase;
@@ -489,6 +490,87 @@ class LlmsTxtTest extends WP_UnitTestCase
 
         $this->assertSame('1', get_query_var(LlmsTxt::QUERY_VAR));
         $this->assertTrue((new LlmsTxt)->isRequested());
+    }
+
+    /**
+     * The rule is still registered while the deactivation hook runs; a plain
+     * flush would write it straight back.
+     */
+    public function test_deactivating_takes_llms_txt_down(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        $llmsTxt->addRewriteRule();
+        $llmsTxt->maybeFlushRewriteRules();
+
+        $llmsTxt->deactivate();
+
+        $this->assertFalse(get_option(LlmsTxt::REWRITE_VERSION_OPTION), 'A reactivation must flush the rule back in.');
+        $this->go_to(home_url('/llms.txt'));
+        $this->assertFalse((new LlmsTxt)->isRequested());
+
+        $llmsTxt->addRewriteRule();
+        $llmsTxt->maybeFlushRewriteRules();
+        $this->go_to(home_url('/llms.txt'));
+        $this->assertTrue((new LlmsTxt)->isRequested(), 'Reactivating brings it back.');
+    }
+
+    public function test_deactivating_drops_the_cached_document(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        $llmsTxt->flushPending();
+        $llmsTxt->body('');
+
+        // Pending until shutdown, so only deactivate() can have dropped the cache.
+        update_option('blogname', 'Renamed');
+        $llmsTxt->deactivate();
+        $body = $llmsTxt->body('');
+        $llmsTxt->flushPending();
+
+        $this->assertStringStartsWith('# Renamed', $body);
+    }
+
+    public function test_kinsta_purges_each_url_without_its_scheme(): void
+    {
+        $this->assertSame([
+            'single|gds-llms-0' => 'example.org/llms.txt',
+            'single|gds-llms-1' => 'example.org/fi/llms.txt',
+        ], Kinsta::request(['https://example.org/llms.txt', 'http://example.org/fi/llms.txt']));
+    }
+
+    /**
+     * Kinsta's mu-plugin loads in DDEV too, where its purge endpoint does not
+     * exist; a warning on every local save would be noise.
+     */
+    public function test_kinsta_is_not_purged_in_local_development(): void
+    {
+        global $kinsta_muplugin;
+
+        $purge = new class
+        {
+            /** @var array<int, array<string, string>> */
+            public array $requests = [];
+
+            /**
+             * @param  array<string, string>  $body
+             * @return array<string, int>
+             */
+            public function send_cache_purge_request(string $url, array $body): array
+            {
+                $this->requests[] = $body;
+
+                return ['response_code' => 200];
+            }
+        };
+        $kinsta_muplugin = (object) [
+            'kinsta_cache_purge' => $purge,
+            'kinsta_cache' => (object) ['config' => ['immediate_path' => 'https://localhost/kinsta-clear-cache/v2/immediate']],
+        ];
+
+        (new LlmsTxt)->flushCache();
+        $kinsta_muplugin = null;
+
+        $this->assertSame('local', wp_get_environment_type());
+        $this->assertSame([], $purge->requests);
     }
 
     public function test_the_query_var_alone_does_not_serve_llms_txt(): void
