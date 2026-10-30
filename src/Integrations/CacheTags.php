@@ -24,9 +24,26 @@ class CacheTags
     {
         $cacheTags = class_exists(SageCacheTags::class) ? SageCacheTags::getInstance() : null;
 
-        if ($cacheTags && $url !== '' && self::isCacheableRequest()) {
-            $cacheTags->save($url);
+        if (! $cacheTags || ! self::isCacheableRequest()) {
+            return;
         }
+
+        if ($url === '') {
+            throw new \LogicException('Cache tags saved without a URL to save them under.');
+        }
+
+        $cacheTags->save($url);
+    }
+
+    /**
+     * The URL sage-cachetags stores the current page under. Releases up to
+     * v2.5.3 store the bare path; later ones the query string as well, sorted
+     * and without tracking parameters, so a purge by URL matches the cached
+     * variant.
+     */
+    public static function currentUrl(string $fallback): string
+    {
+        return class_exists(Util::class) ? Util::currentUrl() : $fallback;
     }
 
     /**

@@ -461,6 +461,180 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertFalse($flushed);
     }
 
+    public function test_editing_a_field_the_document_reads_flushes(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_update_post(['ID' => $post, 'post_title' => 'Renamed'])));
+    }
+
+    /**
+     * WooCommerce re-saves a product on every sale, changing only its modified
+     * date and stock meta.
+     */
+    public function test_a_save_that_changes_nothing_the_document_reads_does_not_flush(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertFalse($this->flushesAfter(function () use ($post) {
+            wp_update_post(['ID' => $post, 'post_modified' => '2030-01-01 00:00:00']);
+            update_post_meta($post, '_stock', 3);
+        }));
+    }
+
+    public function test_yoast_meta_changes_on_a_published_post_flush(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'New description')));
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'Changed again')));
+        $this->assertTrue($this->flushesAfter(fn () => delete_post_meta($post, '_yoast_wpseo_metadesc')));
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_meta-robots-noindex', '1')));
+    }
+
+    /**
+     * What a sale, a first render or another plugin writes to a published post.
+     */
+    public function test_other_meta_does_not_flush(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertFalse($this->flushesAfter(function () use ($post) {
+            update_post_meta($post, '_stock', 2);
+            update_post_meta($post, 'total_sales', 5);
+            delete_post_meta($post, '_price');
+            add_post_meta($post, '_price', '9.90');
+            update_post_meta($post, '_oembed_abc', '<iframe></iframe>');
+        }));
+    }
+
+    /**
+     * Every "Add New" click creates an auto-draft; drafts go to review.
+     */
+    public function test_status_changes_between_non_public_statuses_do_not_flush(): void
+    {
+        $this->assertFalse($this->flushesAfter(function () {
+            $post = self::factory()->post->create(['post_status' => 'auto-draft']);
+            wp_update_post(['ID' => $post, 'post_status' => 'draft']);
+            wp_update_post(['ID' => $post, 'post_status' => 'pending']);
+        }));
+    }
+
+    public function test_publishing_and_trashing_flush(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'draft']);
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_publish_post($post)));
+        $this->assertTrue($this->flushesAfter(fn () => wp_trash_post($post)));
+    }
+
+    /**
+     * wp_publish_post() fires save_post as an update and never post_updated.
+     */
+    public function test_a_scheduled_post_going_live_flushes(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'future', 'post_date' => gmdate('Y-m-d H:i:s', time() + DAY_IN_SECONDS)]);
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_publish_post($post)));
+    }
+
+    /**
+     * Catalogue categories list only the terms that have products.
+     */
+    public function test_changing_a_published_post_catalogue_terms_flushes(): void
+    {
+        register_taxonomy('catalogue', 'post', ['public' => true, 'label' => 'Catalogue']);
+        $filter = fn () => ['catalogue'];
+        add_filter('gds/llms_txt/taxonomies', $filter);
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'catalogue']);
+
+        $flushed = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'catalogue'));
+        $again = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'catalogue'));
+
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('catalogue');
+
+        $this->assertTrue($flushed);
+        $this->assertFalse($again, 'The same terms again change nothing.');
+    }
+
+    public function test_removing_a_catalogue_term_flushes(): void
+    {
+        register_taxonomy('catalogue', 'post', ['public' => true, 'label' => 'Catalogue']);
+        $filter = fn () => ['catalogue'];
+        add_filter('gds/llms_txt/taxonomies', $filter);
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'catalogue']);
+        wp_set_object_terms($post, [$term], 'catalogue');
+
+        $flushed = $this->flushesAfter(fn () => wp_remove_object_terms($post, [$term], 'catalogue'));
+
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('catalogue');
+
+        $this->assertTrue($flushed);
+    }
+
+    /**
+     * The Customizer, REST, WP-CLI and MCP edit menu items without the Menus
+     * screen's wp_update_nav_menu.
+     */
+    public function test_menu_item_edits_outside_the_menus_screen_flush(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $item = 0;
+
+        $this->assertTrue($this->flushesAfter(function () use ($menu, &$item) {
+            $item = wp_update_nav_menu_item($menu, 0, ['menu-item-title' => 'Contact', 'menu-item-url' => 'https://example.org/contact/', 'menu-item-status' => 'publish']);
+        }));
+        $this->assertTrue($this->flushesAfter(fn () => wp_update_nav_menu_item($menu, $item, ['menu-item-title' => 'Reach us', 'menu-item-url' => 'https://example.org/contact/', 'menu-item-status' => 'publish'])));
+        $this->assertTrue($this->flushesAfter(fn () => wp_delete_post($item, true)));
+    }
+
+    /**
+     * WooCommerce re-sets product_visibility (`outofstock`) when a sale sells a
+     * product out.
+     */
+    public function test_terms_outside_the_catalogue_on_a_published_post_do_not_flush(): void
+    {
+        register_taxonomy('product_visibility', 'post', ['public' => false]);
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'product_visibility', 'slug' => 'outofstock']);
+
+        $flushed = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'product_visibility'));
+        unregister_taxonomy('product_visibility');
+
+        $this->assertFalse($flushed);
+    }
+
+    /**
+     * A draft is autosaved into the post itself every minute while it is written.
+     */
+    public function test_editing_a_draft_does_not_flush(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'draft']);
+
+        $this->assertFalse($this->flushesAfter(fn () => wp_update_post(['ID' => $post, 'post_content' => 'Work in progress'])));
+    }
+
+    public function test_forgetting_a_site_drops_its_rules_and_cache(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        $llmsTxt->flushPending();
+        $llmsTxt->body('');
+        $cached = fn () => $GLOBALS['wpdb']->get_col("SELECT option_name FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE '\_transient\_gds\_llms\_txt:%'");
+        $this->assertNotSame([], $cached(), 'A document must be cached for its removal to be tested.');
+        update_option(LlmsTxt::REWRITE_VERSION_OPTION, 'x');
+        update_option('rewrite_rules', ['^llms\.txt$' => 'index.php?'.LlmsTxt::QUERY_VAR.'=1']);
+
+        $this->assertSame(home_url('/llms.txt'), LlmsTxt::forgetSite());
+
+        $this->assertFalse(get_option(LlmsTxt::REWRITE_VERSION_OPTION));
+        $this->assertFalse(get_option('rewrite_rules'));
+        $this->assertSame([], $cached());
+    }
+
     public function test_terms_outside_the_catalogue_do_not_flush(): void
     {
         $this->assertFalse($this->flushesAfter(fn () => self::factory()->term->create(['taxonomy' => 'post_tag'])));

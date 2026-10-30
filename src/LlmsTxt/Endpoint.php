@@ -54,6 +54,8 @@ class Endpoint
         'woocommerce_currency',
         'woocommerce_prices_include_tax',
         'default_product_cat',
+        // Yoast's description templates, used where a post has none of its own.
+        'wpseo_titles',
     ];
 
     /**
@@ -73,11 +75,25 @@ class Endpoint
         add_action('template_redirect', [$this, 'maybeSend'], 0);
         add_action('admin_init', [Yoast::class, 'disableLlmsTxt']);
 
-        add_action('save_post', [$this, 'flushForPost'], 10, 2);
+        // Covers new posts, and wp_publish_post() -- a scheduled post going
+        // live -- which fires no post_updated.
+        add_action('transition_post_status', [$this, 'flushForStatus'], 10, 3);
+        add_action('post_updated', [$this, 'flushForUpdatedPost'], 10, 3);
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
+        // Only relationships actually inserted or removed.
+        add_action('added_term_relationship', [$this, 'flushForPostTerm'], 10, 3);
+        add_action('deleted_term_relationships', [$this, 'flushForPostTerms'], 10, 3);
+        add_action('added_post_meta', [$this, 'flushForPostMeta'], 10, 3);
+        add_action('updated_post_meta', [$this, 'flushForPostMeta'], 10, 3);
+        add_action('deleted_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('saved_term', [$this, 'flushForTerm'], 10, 3);
         add_action('delete_term', [$this, 'flushForTerm'], 10, 3);
         add_action('wp_update_nav_menu', [$this, 'scheduleFlush']);
+        // Menu items edited outside the Menus screen -- Customizer, REST,
+        // WP-CLI, MCP -- fire only these.
+        add_action('wp_add_nav_menu_item', [$this, 'scheduleFlush']);
+        add_action('wp_update_nav_menu_item', [$this, 'scheduleFlush']);
+        add_action('deleted_post', [$this, 'flushForMenuItem'], 10, 2);
         // update_option() on an option that does not exist yet -- the first menu
         // assigned under a new theme -- goes through add_option() instead.
         add_action('added_option', [$this, 'flushForOption']);
@@ -227,6 +243,11 @@ class Endpoint
      */
     protected function cacheKey(string $language): string
     {
+        return self::key($language);
+    }
+
+    protected static function key(string $language): string
+    {
         return implode(':', [self::CACHE_KEY, self::codeVersion(), $language]);
     }
 
@@ -287,6 +308,31 @@ class Endpoint
     }
 
     /**
+     * Deactivation for a site other than the one handling the request, on a
+     * network-wide deactivation. Its rules can't be rebuilt from here -- this
+     * request registered its own -- so they are dropped, and WordPress
+     * regenerates them, without llms.txt, on that site's next request.
+     *
+     * Polylang's loaded languages are this request's site's, so the site's own
+     * are read from its language terms; delete_transient() then reaches a
+     * persistent object cache too. Returns the URL to purge -- only the root
+     * llms.txt, its language URLs depend on settings not loaded here -- so a
+     * network deactivation sends Kinsta one request for every site.
+     */
+    public static function forgetSite(): string
+    {
+        delete_option('rewrite_rules');
+        delete_option(self::REWRITE_VERSION_OPTION);
+
+        $slugs = taxonomy_exists('language') ? get_terms(['taxonomy' => 'language', 'fields' => 'slugs', 'hide_empty' => false]) : [];
+        foreach (is_array($slugs) && $slugs ? $slugs : [''] as $language) {
+            delete_transient(self::key((string) $language));
+        }
+
+        return home_url('/llms.txt');
+    }
+
+    /**
      * Flush once on shutdown however many changes the request made: a product
      * import saves thousands of posts per batch, and each flush is two deletes
      * per language.
@@ -305,6 +351,22 @@ class Endpoint
     }
 
     /**
+     * Post fields the document reads: link labels and URLs, and descriptions
+     * (a generated excerpt comes from the content). Status changes are
+     * transition_post_status's.
+     */
+    public const POST_FIELDS = ['post_title', 'post_excerpt', 'post_content', 'post_name', 'post_parent', 'post_password', 'menu_order'];
+
+    /**
+     * Meta the document reads: Yoast's description, noindex and primary term,
+     * all under this prefix. An allowlist, because what else gets written to a
+     * published post is open-ended -- WooCommerce's stock and price sync on
+     * every sale, oEmbed caches, other plugins' bookkeeping. A Yoast template
+     * reading some other custom field refreshes with CACHE_TTL or the next edit.
+     */
+    public const META_PREFIX = '_yoast_wpseo_';
+
+    /**
      * Only content that can appear in the document: not revisions, autosaves
      * (every minute while someone edits) or orders and other non-public types,
      * which would otherwise flush it on every checkout.
@@ -316,6 +378,90 @@ class Endpoint
         }
 
         $this->scheduleFlush();
+    }
+
+    /**
+     * Only a post becoming, or ceasing to be, public: not every "Add New" click
+     * (new → auto-draft) or a draft submitted for review.
+     */
+    public function flushForStatus(string $new, string $old, \WP_Post $post): void
+    {
+        if (is_post_status_viewable($new) !== is_post_status_viewable($old)) {
+            $this->flushForPost($post->ID, $post);
+        }
+    }
+
+    /**
+     * Only a published post's fields, and only those the document reads.
+     * WooCommerce re-saves a product on every sale to record its stock and
+     * modified date, and a draft is autosaved every minute; neither can change
+     * what llms.txt shows.
+     */
+    public function flushForUpdatedPost(int $postId, \WP_Post $after, \WP_Post $before): void
+    {
+        if (! is_post_publicly_viewable($after) && ! is_post_publicly_viewable($before)) {
+            return;
+        }
+
+        foreach (self::POST_FIELDS as $field) {
+            if ($after->$field !== $before->$field) {
+                $this->flushForPost($postId, $after);
+
+                return;
+            }
+        }
+    }
+
+    /**
+     * A published post gaining or losing a catalogue term, which decides which
+     * categories are listed. Only those: WooCommerce re-sets
+     * `product_visibility` whenever a sale sells a product out. Renaming a
+     * non-catalogue term a menu links to, or one a Yoast template reads, waits
+     * for CACHE_TTL like other template inputs.
+     */
+    public function flushForPostTerm(int $objectId, int $ttId, string $taxonomy): void
+    {
+        $this->flushForPostTerms($objectId, [$ttId], $taxonomy);
+    }
+
+    /**
+     * @param  array<int|string>  $ttIds
+     */
+    public function flushForPostTerms(int $objectId, array $ttIds, string $taxonomy): void
+    {
+        if (! in_array($taxonomy, (new Catalogue)->taxonomies(), true)) {
+            return;
+        }
+
+        $post = get_post($objectId);
+        if ($post && is_post_publicly_viewable($post)) {
+            $this->flushForPost($objectId, $post);
+        }
+    }
+
+    /**
+     * flushForPost() skips menu items, which are not a viewable type.
+     */
+    public function flushForMenuItem(int $postId, ?\WP_Post $post = null): void
+    {
+        if ($post && $post->post_type === 'nav_menu_item') {
+            $this->scheduleFlush();
+        }
+    }
+
+    /**
+     * @param  int|int[]  $metaId
+     */
+    public function flushForPostMeta(int|array $metaId, int $postId, string $key): void
+    {
+        if (! str_starts_with($key, self::META_PREFIX)) {
+            return;
+        }
+
+        $post = $postId ? get_post($postId) : null;
+        if ($post && is_post_publicly_viewable($post)) {
+            $this->flushForPost($postId, $post);
+        }
     }
 
     /**
