@@ -482,28 +482,50 @@ class LlmsTxtTest extends WP_UnitTestCase
         }));
     }
 
-    /**
-     * A Yoast description template can read any custom field, so every meta
-     * change on a published post flushes -- added, updated or deleted.
-     */
-    public function test_meta_changes_on_a_published_post_flush(): void
+    public function test_yoast_meta_changes_on_a_published_post_flush(): void
     {
         $post = self::factory()->post->create();
 
         $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'New description')));
         $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'Changed again')));
         $this->assertTrue($this->flushesAfter(fn () => delete_post_meta($post, '_yoast_wpseo_metadesc')));
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_meta-robots-noindex', '1')));
     }
 
-    public function test_stock_bookkeeping_meta_does_not_flush(): void
+    /**
+     * What a sale, a first render or another plugin writes to a published post.
+     */
+    public function test_other_meta_does_not_flush(): void
     {
         $post = self::factory()->post->create();
 
         $this->assertFalse($this->flushesAfter(function () use ($post) {
             update_post_meta($post, '_stock', 2);
-            update_post_meta($post, '_stock_status', 'instock');
             update_post_meta($post, 'total_sales', 5);
+            delete_post_meta($post, '_price');
+            add_post_meta($post, '_price', '9.90');
+            update_post_meta($post, '_oembed_abc', '<iframe></iframe>');
         }));
+    }
+
+    /**
+     * Every "Add New" click creates an auto-draft; drafts go to review.
+     */
+    public function test_status_changes_between_non_public_statuses_do_not_flush(): void
+    {
+        $this->assertFalse($this->flushesAfter(function () {
+            $post = self::factory()->post->create(['post_status' => 'auto-draft']);
+            wp_update_post(['ID' => $post, 'post_status' => 'draft']);
+            wp_update_post(['ID' => $post, 'post_status' => 'pending']);
+        }));
+    }
+
+    public function test_publishing_and_trashing_flush(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'draft']);
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_publish_post($post)));
+        $this->assertTrue($this->flushesAfter(fn () => wp_trash_post($post)));
     }
 
     /**
@@ -519,13 +541,38 @@ class LlmsTxtTest extends WP_UnitTestCase
     /**
      * Catalogue categories list only the terms that have products.
      */
-    public function test_changing_a_published_post_terms_flushes(): void
+    public function test_changing_a_published_post_catalogue_terms_flushes(): void
     {
+        register_taxonomy('catalogue', 'post', ['public' => true, 'label' => 'Catalogue']);
+        $filter = fn () => ['catalogue'];
+        add_filter('gds/llms_txt/taxonomies', $filter);
         $post = self::factory()->post->create();
-        $term = self::factory()->term->create(['taxonomy' => 'category']);
+        $term = self::factory()->term->create(['taxonomy' => 'catalogue']);
 
-        $this->assertTrue($this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'category')));
-        $this->assertFalse($this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'category')), 'The same terms again change nothing.');
+        $flushed = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'catalogue'));
+        $again = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'catalogue'));
+
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('catalogue');
+
+        $this->assertTrue($flushed);
+        $this->assertFalse($again, 'The same terms again change nothing.');
+    }
+
+    /**
+     * WooCommerce re-sets product_visibility (`outofstock`) when a sale sells a
+     * product out.
+     */
+    public function test_terms_outside_the_catalogue_on_a_published_post_do_not_flush(): void
+    {
+        register_taxonomy('product_visibility', 'post', ['public' => false]);
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'product_visibility', 'slug' => 'outofstock']);
+
+        $flushed = $this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'product_visibility'));
+        unregister_taxonomy('product_visibility');
+
+        $this->assertFalse($flushed);
     }
 
     /**

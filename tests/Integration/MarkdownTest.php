@@ -68,6 +68,24 @@ class MarkdownTest extends WP_UnitTestCase
         $this->assertSame('', (new Markdown)->alternateUrl());
     }
 
+    /**
+     * Page mode stores its tags under sage-cachetags' query string for the page,
+     * on the markdown URL as it is served.
+     */
+    public function test_stored_url_takes_only_the_query_from_cachetags(): void
+    {
+        $this->assertSame('https://example.org/shop/md/?_brand=x', Markdown::storedUrl('https://example.org/shop/', 'https://example.org/shop/?_brand=x'));
+        $this->assertSame('https://example.org/shop/md', Markdown::storedUrl('https://example.org/shop', 'https://example.org/shop/'), 'No slash added where the site uses none.');
+        $this->assertSame('https://example.org/shop/md?_brand=x', Markdown::storedUrl('https://example.org/shop', 'https://example.org/shop/?_brand=x'));
+    }
+
+    public function test_stored_url_falls_back_to_the_path_when_too_long_to_store(): void
+    {
+        $query = '_q='.str_repeat('a', 170);
+
+        $this->assertSame('https://example.org/shop/md/', Markdown::storedUrl('https://example.org/shop/', 'https://example.org/shop/?'.$query));
+    }
+
     public function test_html_path_reverses_both_forms(): void
     {
         $this->assertSame('/about/', Markdown::htmlPath('/about/md/'));

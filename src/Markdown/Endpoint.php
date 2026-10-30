@@ -268,24 +268,27 @@ class Endpoint
             $html = FacetWP::fill($html, $path);
             $markdown = (new Converter($this->pageUrl()))->page($html);
             $this->sendHeaders($markdown, $this->pageUrl());
-            CacheTags::saveUrl(self::storedUrl(CacheTags::currentUrl($path)));
+            CacheTags::saveUrl(self::storedUrl($path, CacheTags::currentUrl($path)));
 
             return $markdown;
         });
     }
 
     /**
-     * The markdown URL a page-mode response's tags are stored under: the URL
-     * sage-cachetags stores for the HTML page -- its query string sorted, with
-     * tracking parameters dropped, so a purge by URL matches what is cached --
-     * with `md/` inserted before the query string.
+     * The URL a page-mode response's tags are stored under: the markdown URL
+     * of $path with the query string sage-cachetags stores for the HTML page
+     * -- sorted, tracking parameters dropped -- so a purge by URL matches what
+     * is cached. Only the query is taken from it: it always adds a trailing
+     * slash, which a site without them doesn't serve the markdown at.
      */
-    protected static function storedUrl(string $pageUrl): string
+    public static function storedUrl(string $path, string $cachetagsUrl): string
     {
-        [$path, $query] = array_pad(explode('?', $pageUrl, 2), 2, '');
         $url = self::url($path);
+        $query = (string) parse_url($cachetagsUrl, PHP_URL_QUERY);
+        $full = $url.'?'.$query;
 
-        return $query === '' || $url === '' ? $url : $url.'?'.$query;
+        // The store's url column is varchar(191); a longer one would not save.
+        return $query === '' || strlen($full) > 191 ? $url : $full;
     }
 
     /**

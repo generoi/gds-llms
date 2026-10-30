@@ -75,9 +75,8 @@ class Endpoint
         add_action('template_redirect', [$this, 'maybeSend'], 0);
         add_action('admin_init', [Yoast::class, 'disableLlmsTxt']);
 
-        add_action('save_post', [$this, 'flushForNewPost'], 10, 3);
-        // wp_publish_post() -- a scheduled post going live -- fires this but
-        // not post_updated.
+        // Covers new posts, and wp_publish_post() -- a scheduled post going
+        // live -- which fires no post_updated.
         add_action('transition_post_status', [$this, 'flushForStatus'], 10, 3);
         add_action('post_updated', [$this, 'flushForUpdatedPost'], 10, 3);
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
@@ -352,11 +351,13 @@ class Endpoint
     public const POST_FIELDS = ['post_title', 'post_excerpt', 'post_content', 'post_name', 'post_parent', 'post_password', 'menu_order'];
 
     /**
-     * Meta written without anything the document shows changing: WooCommerce's
-     * stock bookkeeping on every sale, and the editor's lock. Every other key
-     * flushes -- a Yoast description template can read any custom field.
+     * Meta the document reads: Yoast's description, noindex and primary term,
+     * all under this prefix. An allowlist, because what else gets written to a
+     * published post is open-ended -- WooCommerce's stock and price sync on
+     * every sale, oEmbed caches, other plugins' bookkeeping. A Yoast template
+     * reading some other custom field refreshes with CACHE_TTL or the next edit.
      */
-    public const IGNORED_META = ['_stock', '_stock_status', 'total_sales', '_product_version', '_edit_lock', '_edit_last'];
+    public const META_PREFIX = '_yoast_wpseo_';
 
     /**
      * Only content that can appear in the document: not revisions, autosaves
@@ -373,18 +374,12 @@ class Endpoint
     }
 
     /**
-     * Updates are post_updated's, which knows what changed.
+     * Only a post becoming, or ceasing to be, public: not every "Add New" click
+     * (new → auto-draft) or a draft submitted for review.
      */
-    public function flushForNewPost(int $postId, \WP_Post $post, bool $update): void
-    {
-        if (! $update) {
-            $this->flushForPost($postId, $post);
-        }
-    }
-
     public function flushForStatus(string $new, string $old, \WP_Post $post): void
     {
-        if ($new !== $old) {
+        if (is_post_status_viewable($new) !== is_post_status_viewable($old)) {
             $this->flushForPost($post->ID, $post);
         }
     }
@@ -411,8 +406,9 @@ class Endpoint
     }
 
     /**
-     * A published post's terms: catalogue categories gaining or losing their
-     * products, or a description template reading a category.
+     * A published post's catalogue terms, which decide which categories are
+     * listed. Only those: WooCommerce re-sets `product_visibility` whenever a
+     * sale sells a product out.
      *
      * @param  array<int|string>  $terms
      * @param  array<int|string>  $ttIds
@@ -420,13 +416,20 @@ class Endpoint
      */
     public function flushForPostTerms(int $objectId, array $terms, array $ttIds, string $taxonomy, bool $append, array $oldTtIds): void
     {
+        if (! in_array($taxonomy, (new Catalogue)->taxonomies(), true)) {
+            return;
+        }
+
         $ttIds = array_map('intval', $ttIds);
         $oldTtIds = array_map('intval', $oldTtIds);
         sort($ttIds);
         sort($oldTtIds);
 
+        // Appending passes no old terms; it changes something when it adds any.
+        $changed = $append ? $ttIds !== [] : $ttIds !== $oldTtIds;
+
         $post = get_post($objectId);
-        if ($ttIds !== $oldTtIds && $post && is_post_publicly_viewable($post)) {
+        if ($changed && $post && is_post_publicly_viewable($post)) {
             $this->flushForPost($objectId, $post);
         }
     }
@@ -436,7 +439,7 @@ class Endpoint
      */
     public function flushForPostMeta(int|array $metaId, int $postId, string $key): void
     {
-        if (in_array($key, self::IGNORED_META, true)) {
+        if (! str_starts_with($key, self::META_PREFIX)) {
             return;
         }
 
