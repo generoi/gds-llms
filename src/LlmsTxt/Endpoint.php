@@ -5,6 +5,7 @@ namespace GeneroWP\Llms\LlmsTxt;
 use Genero\Sage\CacheTags\Tags\CoreTags;
 use GeneroWP\Llms\CacheControl;
 use GeneroWP\Llms\Integrations\CacheTags;
+use GeneroWP\Llms\Integrations\Kinsta;
 use GeneroWP\Llms\Integrations\Polylang;
 use GeneroWP\Llms\Integrations\RankMath;
 use GeneroWP\Llms\Integrations\Yoast;
@@ -250,16 +251,39 @@ class Endpoint
     }
 
     /**
-     * Drop the rendered document in every language.
-     *
-     * A CDN in front is purged separately through cache tags; this only stops the
-     * origin handing back a stale body on the fetch that follows a purge.
+     * Drop the rendered document in every language, and Kinsta's page-cache copy
+     * of it. A CDN in front is purged separately through cache tags.
      */
     public function flushCache(): void
     {
+        $urls = [];
         foreach (Polylang::languages() as $language) {
             delete_transient($this->cacheKey($language));
+            $urls[] = self::url($language);
         }
+
+        Kinsta::purge($urls);
+    }
+
+    /**
+     * Take /llms.txt down with the plugin. The rule is still registered for this
+     * request, so it is removed before flushing or the flush would write it back;
+     * forgetting the rule version makes a later reactivation flush it in again.
+     * The page cache is purged too, or it would keep serving the last document.
+     */
+    public function deactivate(): void
+    {
+        global $wp_rewrite;
+
+        foreach ($wp_rewrite->extra_rules_top as $regex => $query) {
+            if (str_starts_with($query, 'index.php?'.self::QUERY_VAR.'=')) {
+                unset($wp_rewrite->extra_rules_top[$regex]);
+            }
+        }
+
+        flush_rewrite_rules(false);
+        delete_option(self::REWRITE_VERSION_OPTION);
+        $this->flushCache();
     }
 
     /**

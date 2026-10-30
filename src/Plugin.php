@@ -39,6 +39,11 @@ class Plugin
         (new Robots)->register();
     }
 
+    public static function deactivate(): void
+    {
+        (new LlmsTxt\Endpoint)->deactivate();
+    }
+
     /**
      * The bundled translations, loaded just in time -- switch_to_locale()
      * included. A site's own translation in languages/plugins/ wins.
