@@ -2,14 +2,14 @@
 # This file is distributed under the MIT.
 msgid ""
 msgstr ""
-"Project-Id-Version: GDS LLMs 0.4.0\n"
+"Project-Id-Version: LLMs 0.4.2\n"
 "Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/gds-llms\n"
 "Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
 "Language-Team: LANGUAGE <LL@li.org>\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
-"POT-Creation-Date: 2026-10-29T23:18:45+00:00\n"
+"POT-Creation-Date: 2026-10-30T13:31:17+00:00\n"
 "PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
 "X-Generator: WP-CLI 2.12.0\n"
 "X-Domain: gds-llms\n"
@@ -145,4 +145,36 @@ msgstr ""
 #. translators: %s: title of an embedded map, video or app
 #: src/Markdown/Converter.php:212
 msgid "Embedded content"
+msgstr ""
+
+#. translators: %s: form title
+#: src/WebMcp.php:75
+#, php-format
+msgid "Fill in the \"%s\" form for the visitor to send."
+msgstr ""
+
+#: src/WebMcp.php:100
+msgid "Leave this empty."
+msgstr ""
+
+#: src/WebMcp.php:114
+msgid "Required."
+msgstr ""
+
+#: src/WebMcp.php:143
+msgid "What to search for."
+msgstr ""
+
+#: src/WebMcp.php:146
+msgid "Search this site and open the results page."
+msgstr ""
+
+#: src/WebMcp.php:169
+msgid "Filter the results listed on this page. Every parameter is optional; omitted filters keep their current value, and an empty list clears one. Returns the filtered page URL, the number of results and the first results."
+msgstr ""
+
+#. translators: %s: comma-separated list of choices
+#: src/WebMcp.php:171
+#, php-format
+msgid "Choices: %s."
 msgstr ""

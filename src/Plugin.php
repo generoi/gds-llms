@@ -37,6 +37,7 @@ class Plugin
         (new LlmsTxt\Endpoint)->register();
         (new Markdown\Endpoint)->register();
         (new Robots)->register();
+        (new WebMcp)->register();
     }
 
     /**
