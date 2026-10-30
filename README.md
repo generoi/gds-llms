@@ -23,6 +23,11 @@ Both responses carry `X-Robots-Tag: noindex`, and the same policy as `Content-Si
 
 Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carousels) has no HTML to convert, so it is missing from the markdown.
 
+**WebMCP** tools let an AI agent in the browser use the page's forms and filters directly ([spec](https://webmachinelearning.github.io/webmcp/), Chrome origin trial from 149; locally `chrome://flags/#enable-webmcp-testing`). Browsers without it ignore all of this.
+
+- **Gravity Forms** and the **search form** (the first `core/search` block or `get_search_form()` on a page) get Chrome's declarative attributes: `toolname` and `tooldescription` on the form, `toolparamdescription` on fields. Chrome derives the parameters from the fields' names and labels and fills them in; the visitor still submits (no `toolautosubmit`). A field's description, "Required." for GF's `aria-required` fields, and "Leave this empty." for GF's honeypot go into `toolparamdescription`. Forms with a captcha are skipped, since an agent can't submit them.
+- **FacetWP** facets become one `filter_results` tool via `document.modelContext.registerTool()`: each facet a parameter, its choices an enum. It sets the facets, refreshes, and returns the filtered URL, the result count and the first 20 results.
+
 ## Filters
 
 | Filter | Default | Use |
@@ -38,6 +43,8 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | `gds/llms/markdown_listing_item` | link, product price, description | In a listing this package builds (archives in `content` mode), one post's line as HTML: add its date, author or a field. Gets the `WP_Post`. |
 | `gds/llms/markdown_per_page` | 100, or the listing's own size where larger or unlimited | Results per markdown page of a listing; gets the listing's `WP_Query`, or the Query Loop block. Return the size it has on the HTML page to leave it as it is. |
 | `gds/llms/markdown_available` | not a 404, feed or embed; in `content` mode only singular, not password-protected | Return `false` for content a template hides behind a login, in `content` mode. |
+| `gds/llms/webmcp` | `true` | `false` to output no WebMCP tools at all. |
+| `gds/llms/webmcp_form` | `true`, `false` for forms with a captcha | Whether a Gravity Form is offered to agents; gets the form array. Return `false` for login, account or other forms agents shouldn't fill. |
 | `gds/llms/cache_control` | `public, max-age=0, s-maxage=3600` | `Cache-Control` for llms.txt and markdown responses that have none yet (a theme's own, or WordPress' no-cache headers, are left alone); never sent to logged-in users or previews. Return `''` to send none. |
 
 ```php

@@ -4,7 +4,7 @@
 Plugin Name:  LLMs
 Plugin URI:   https://github.com/generoi/gds-llms
 Description:  Serves /llms.txt and a markdown version of every page for language models
-Version:      0.4.2
+Version:      0.5.0
 Author:       Genero
 Author URI:   https://genero.fi/
 License:      MIT
