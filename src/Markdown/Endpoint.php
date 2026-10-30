@@ -256,18 +256,36 @@ class Endpoint
             exit;
         }
 
-        (new PageSource)->start(function (string $html): string {
-            $path = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
+        $path = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
+
+        // Decided here, not inside the output buffer, where an error could only
+        // truncate the response.
+        if (self::url($path) === '') {
+            $this->notFound();
+        }
+
+        (new PageSource)->start(function (string $html) use ($path): string {
             $html = FacetWP::fill($html, $path);
             $markdown = (new Converter($this->pageUrl()))->page($html);
             $this->sendHeaders($markdown, $this->pageUrl());
-            // Under the path, as content mode saves under the permalink: url()
-            // gives a query string no markdown URL, so `?utm_source=…` would
-            // otherwise save the tags under nothing and escape every purge.
-            CacheTags::saveUrl(self::url($path));
+            CacheTags::saveUrl(self::storedUrl(CacheTags::currentUrl($path)));
 
             return $markdown;
         });
+    }
+
+    /**
+     * The markdown URL a page-mode response's tags are stored under: the URL
+     * sage-cachetags stores for the HTML page -- its query string sorted, with
+     * tracking parameters dropped, so a purge by URL matches what is cached --
+     * with `md/` inserted before the query string.
+     */
+    protected static function storedUrl(string $pageUrl): string
+    {
+        [$path, $query] = array_pad(explode('?', $pageUrl, 2), 2, '');
+        $url = self::url($path);
+
+        return $query === '' || $url === '' ? $url : $url.'?'.$query;
     }
 
     /**

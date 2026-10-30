@@ -36,6 +36,17 @@ class CacheTags
     }
 
     /**
+     * The URL sage-cachetags stores the current page under. Releases up to
+     * v2.5.3 store the bare path; later ones the query string as well, sorted
+     * and without tracking parameters, so a purge by URL matches the cached
+     * variant.
+     */
+    public static function currentUrl(string $fallback): string
+    {
+        return class_exists(Util::class) ? Util::currentUrl() : $fallback;
+    }
+
+    /**
      * llms.txt exits before `wp_footer`, which is where sage-cachetags saves the
      * URL and writes the header for a normal page, so both happen here.
      *

@@ -482,11 +482,60 @@ class LlmsTxtTest extends WP_UnitTestCase
         }));
     }
 
-    public function test_a_yoast_description_change_flushes(): void
+    /**
+     * A Yoast description template can read any custom field, so every meta
+     * change on a published post flushes -- added, updated or deleted.
+     */
+    public function test_meta_changes_on_a_published_post_flush(): void
     {
         $post = self::factory()->post->create();
 
         $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'New description')));
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'Changed again')));
+        $this->assertTrue($this->flushesAfter(fn () => delete_post_meta($post, '_yoast_wpseo_metadesc')));
+    }
+
+    public function test_stock_bookkeeping_meta_does_not_flush(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertFalse($this->flushesAfter(function () use ($post) {
+            update_post_meta($post, '_stock', 2);
+            update_post_meta($post, '_stock_status', 'instock');
+            update_post_meta($post, 'total_sales', 5);
+        }));
+    }
+
+    /**
+     * wp_publish_post() fires save_post as an update and never post_updated.
+     */
+    public function test_a_scheduled_post_going_live_flushes(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'future', 'post_date' => gmdate('Y-m-d H:i:s', time() + DAY_IN_SECONDS)]);
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_publish_post($post)));
+    }
+
+    /**
+     * Catalogue categories list only the terms that have products.
+     */
+    public function test_changing_a_published_post_terms_flushes(): void
+    {
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'category']);
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'category')));
+        $this->assertFalse($this->flushesAfter(fn () => wp_set_object_terms($post, [$term], 'category')), 'The same terms again change nothing.');
+    }
+
+    /**
+     * A draft is autosaved into the post itself every minute while it is written.
+     */
+    public function test_editing_a_draft_does_not_flush(): void
+    {
+        $post = self::factory()->post->create(['post_status' => 'draft']);
+
+        $this->assertFalse($this->flushesAfter(fn () => wp_update_post(['ID' => $post, 'post_content' => 'Work in progress'])));
     }
 
     public function test_forgetting_a_site_drops_its_rules_and_cache(): void
@@ -494,14 +543,16 @@ class LlmsTxtTest extends WP_UnitTestCase
         $llmsTxt = new LlmsTxt;
         $llmsTxt->flushPending();
         $llmsTxt->body('');
+        $cached = fn () => $GLOBALS['wpdb']->get_col("SELECT option_name FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE '\_transient\_gds\_llms\_txt:%'");
+        $this->assertNotSame([], $cached(), 'A document must be cached for its removal to be tested.');
         update_option(LlmsTxt::REWRITE_VERSION_OPTION, 'x');
         update_option('rewrite_rules', ['^llms\.txt$' => 'index.php?'.LlmsTxt::QUERY_VAR.'=1']);
 
-        LlmsTxt::forgetSite();
+        $this->assertSame(home_url('/llms.txt'), LlmsTxt::forgetSite());
 
         $this->assertFalse(get_option(LlmsTxt::REWRITE_VERSION_OPTION));
         $this->assertFalse(get_option('rewrite_rules'));
-        $this->assertSame([], $GLOBALS['wpdb']->get_col("SELECT option_name FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE '\_transient\_gds\_llms\_txt:%'"));
+        $this->assertSame([], $cached());
     }
 
     public function test_terms_outside_the_catalogue_do_not_flush(): void

@@ -13,11 +13,12 @@ class Yoast
 
     /**
      * The meta description an editor set in Yoast, '' without one, or null when
-     * Yoast keeps the post out of search.
+     * Yoast keeps the post out of search -- content excluded from search should
+     * not be advertised to models either.
      *
-     * Yoast returns false for anything set to noindex, which conveniently doubles
-     * as a filter -- content excluded from search should not be advertised to
-     * models either.
+     * for_post() is false only without an indexable (an excluded type or
+     * status); a noindexed post has one, and says so in its robots value,
+     * whether set on the post or by its post type's default.
      */
     public static function description(int $postId): ?string
     {
@@ -27,7 +28,7 @@ class Yoast
 
         $meta = YoastSEO()->meta->for_post($postId);
 
-        if ($meta === false) {
+        if ($meta === false || ($meta->robots['index'] ?? '') === 'noindex') {
             return null;
         }
 

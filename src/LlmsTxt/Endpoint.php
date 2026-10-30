@@ -54,6 +54,8 @@ class Endpoint
         'woocommerce_currency',
         'woocommerce_prices_include_tax',
         'default_product_cat',
+        // Yoast's description templates, used where a post has none of its own.
+        'wpseo_titles',
     ];
 
     /**
@@ -74,8 +76,12 @@ class Endpoint
         add_action('admin_init', [Yoast::class, 'disableLlmsTxt']);
 
         add_action('save_post', [$this, 'flushForNewPost'], 10, 3);
+        // wp_publish_post() -- a scheduled post going live -- fires this but
+        // not post_updated.
+        add_action('transition_post_status', [$this, 'flushForStatus'], 10, 3);
         add_action('post_updated', [$this, 'flushForUpdatedPost'], 10, 3);
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
+        add_action('set_object_terms', [$this, 'flushForPostTerms'], 10, 6);
         add_action('added_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('updated_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('deleted_post_meta', [$this, 'flushForPostMeta'], 10, 3);
@@ -231,6 +237,11 @@ class Endpoint
      */
     protected function cacheKey(string $language): string
     {
+        return self::key($language);
+    }
+
+    protected static function key(string $language): string
+    {
         return implode(':', [self::CACHE_KEY, self::codeVersion(), $language]);
     }
 
@@ -294,22 +305,25 @@ class Endpoint
      * Deactivation for a site other than the one handling the request, on a
      * network-wide deactivation. Its rules can't be rebuilt from here -- this
      * request registered its own -- so they are dropped, and WordPress
-     * regenerates them, without llms.txt, on that site's next request. Its
-     * languages aren't loaded here either: only the root llms.txt is purged,
-     * language copies expire with the page cache.
+     * regenerates them, without llms.txt, on that site's next request.
+     *
+     * Polylang's loaded languages are this request's site's, so the site's own
+     * are read from its language terms; delete_transient() then reaches a
+     * persistent object cache too. Returns the URL to purge -- only the root
+     * llms.txt, its language URLs depend on settings not loaded here -- so a
+     * network deactivation sends Kinsta one request for every site.
      */
-    public static function forgetSite(): void
+    public static function forgetSite(): string
     {
-        global $wpdb;
-
         delete_option('rewrite_rules');
         delete_option(self::REWRITE_VERSION_OPTION);
-        $wpdb->query($wpdb->prepare(
-            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-            $wpdb->esc_like('_transient_'.self::CACHE_KEY.':').'%',
-            $wpdb->esc_like('_transient_timeout_'.self::CACHE_KEY.':').'%',
-        ));
-        Kinsta::purge([home_url('/llms.txt')]);
+
+        $slugs = taxonomy_exists('language') ? get_terms(['taxonomy' => 'language', 'fields' => 'slugs', 'hide_empty' => false]) : [];
+        foreach (is_array($slugs) && $slugs ? $slugs : [''] as $language) {
+            delete_transient(self::key((string) $language));
+        }
+
+        return home_url('/llms.txt');
     }
 
     /**
@@ -331,15 +345,18 @@ class Endpoint
     }
 
     /**
-     * Post fields the document reads: link labels and URLs, whether an item is
-     * listed, and descriptions (a generated excerpt comes from the content).
+     * Post fields the document reads: link labels and URLs, and descriptions
+     * (a generated excerpt comes from the content). Status changes are
+     * transition_post_status's.
      */
-    public const POST_FIELDS = ['post_title', 'post_excerpt', 'post_content', 'post_status', 'post_name', 'post_parent', 'post_password', 'menu_order'];
+    public const POST_FIELDS = ['post_title', 'post_excerpt', 'post_content', 'post_name', 'post_parent', 'post_password', 'menu_order'];
 
     /**
-     * Meta the document reads: Yoast's hand-written description.
+     * Meta written without anything the document shows changing: WooCommerce's
+     * stock bookkeeping on every sale, and the editor's lock. Every other key
+     * flushes -- a Yoast description template can read any custom field.
      */
-    public const POST_META = ['_yoast_wpseo_metadesc'];
+    public const IGNORED_META = ['_stock', '_stock_status', 'total_sales', '_product_version', '_edit_lock', '_edit_last'];
 
     /**
      * Only content that can appear in the document: not revisions, autosaves
@@ -365,13 +382,25 @@ class Endpoint
         }
     }
 
+    public function flushForStatus(string $new, string $old, \WP_Post $post): void
+    {
+        if ($new !== $old) {
+            $this->flushForPost($post->ID, $post);
+        }
+    }
+
     /**
-     * Only when a field the document reads changed. WooCommerce re-saves a
-     * product on every sale to record its stock and modified date; that must
-     * not rebuild and purge llms.txt each time.
+     * Only a published post's fields, and only those the document reads.
+     * WooCommerce re-saves a product on every sale to record its stock and
+     * modified date, and a draft is autosaved every minute; neither can change
+     * what llms.txt shows.
      */
     public function flushForUpdatedPost(int $postId, \WP_Post $after, \WP_Post $before): void
     {
+        if (! is_post_publicly_viewable($after) && ! is_post_publicly_viewable($before)) {
+            return;
+        }
+
         foreach (self::POST_FIELDS as $field) {
             if ($after->$field !== $before->$field) {
                 $this->flushForPost($postId, $after);
@@ -382,12 +411,38 @@ class Endpoint
     }
 
     /**
+     * A published post's terms: catalogue categories gaining or losing their
+     * products, or a description template reading a category.
+     *
+     * @param  array<int|string>  $terms
+     * @param  array<int|string>  $ttIds
+     * @param  array<int|string>  $oldTtIds
+     */
+    public function flushForPostTerms(int $objectId, array $terms, array $ttIds, string $taxonomy, bool $append, array $oldTtIds): void
+    {
+        $ttIds = array_map('intval', $ttIds);
+        $oldTtIds = array_map('intval', $oldTtIds);
+        sort($ttIds);
+        sort($oldTtIds);
+
+        $post = get_post($objectId);
+        if ($ttIds !== $oldTtIds && $post && is_post_publicly_viewable($post)) {
+            $this->flushForPost($objectId, $post);
+        }
+    }
+
+    /**
      * @param  int|int[]  $metaId
      */
     public function flushForPostMeta(int|array $metaId, int $postId, string $key): void
     {
-        if (in_array($key, self::POST_META, true)) {
-            $this->flushForPost($postId, get_post($postId));
+        if (in_array($key, self::IGNORED_META, true)) {
+            return;
+        }
+
+        $post = $postId ? get_post($postId) : null;
+        if ($post && is_post_publicly_viewable($post)) {
+            $this->flushForPost($postId, $post);
         }
     }
 

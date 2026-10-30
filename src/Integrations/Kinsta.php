@@ -21,7 +21,7 @@ class Kinsta
     {
         global $kinsta_muplugin;
 
-        if (! isset($kinsta_muplugin->kinsta_cache_purge, $kinsta_muplugin->kinsta_cache->config['immediate_path'])) {
+        if (! $urls || ! isset($kinsta_muplugin->kinsta_cache_purge, $kinsta_muplugin->kinsta_cache->config['immediate_path'])) {
             return;
         }
 

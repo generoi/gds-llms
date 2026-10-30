@@ -46,13 +46,15 @@ class Plugin
     public static function deactivate(bool $networkWide = false): void
     {
         if ($networkWide && is_multisite()) {
+            $urls = [];
             foreach (get_sites(['fields' => 'ids', 'number' => 0]) as $siteId) {
                 if ((int) $siteId !== get_current_blog_id()) {
                     switch_to_blog((int) $siteId);
-                    LlmsTxt\Endpoint::forgetSite();
+                    $urls[] = LlmsTxt\Endpoint::forgetSite();
                     restore_current_blog();
                 }
             }
+            Integrations\Kinsta::purge($urls);
         }
 
         (new LlmsTxt\Endpoint)->deactivate();
