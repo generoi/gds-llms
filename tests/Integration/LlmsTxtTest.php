@@ -559,6 +559,39 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertFalse($again, 'The same terms again change nothing.');
     }
 
+    public function test_removing_a_catalogue_term_flushes(): void
+    {
+        register_taxonomy('catalogue', 'post', ['public' => true, 'label' => 'Catalogue']);
+        $filter = fn () => ['catalogue'];
+        add_filter('gds/llms_txt/taxonomies', $filter);
+        $post = self::factory()->post->create();
+        $term = self::factory()->term->create(['taxonomy' => 'catalogue']);
+        wp_set_object_terms($post, [$term], 'catalogue');
+
+        $flushed = $this->flushesAfter(fn () => wp_remove_object_terms($post, [$term], 'catalogue'));
+
+        remove_filter('gds/llms_txt/taxonomies', $filter);
+        unregister_taxonomy('catalogue');
+
+        $this->assertTrue($flushed);
+    }
+
+    /**
+     * The Customizer, REST, WP-CLI and MCP edit menu items without the Menus
+     * screen's wp_update_nav_menu.
+     */
+    public function test_menu_item_edits_outside_the_menus_screen_flush(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $item = 0;
+
+        $this->assertTrue($this->flushesAfter(function () use ($menu, &$item) {
+            $item = wp_update_nav_menu_item($menu, 0, ['menu-item-title' => 'Contact', 'menu-item-url' => 'https://example.org/contact/', 'menu-item-status' => 'publish']);
+        }));
+        $this->assertTrue($this->flushesAfter(fn () => wp_update_nav_menu_item($menu, $item, ['menu-item-title' => 'Reach us', 'menu-item-url' => 'https://example.org/contact/', 'menu-item-status' => 'publish'])));
+        $this->assertTrue($this->flushesAfter(fn () => wp_delete_post($item, true)));
+    }
+
     /**
      * WooCommerce re-sets product_visibility (`outofstock`) when a sale sells a
      * product out.

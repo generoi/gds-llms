@@ -80,13 +80,20 @@ class Endpoint
         add_action('transition_post_status', [$this, 'flushForStatus'], 10, 3);
         add_action('post_updated', [$this, 'flushForUpdatedPost'], 10, 3);
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
-        add_action('set_object_terms', [$this, 'flushForPostTerms'], 10, 6);
+        // Only relationships actually inserted or removed.
+        add_action('added_term_relationship', [$this, 'flushForPostTerm'], 10, 3);
+        add_action('deleted_term_relationships', [$this, 'flushForPostTerms'], 10, 3);
         add_action('added_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('updated_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('deleted_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('saved_term', [$this, 'flushForTerm'], 10, 3);
         add_action('delete_term', [$this, 'flushForTerm'], 10, 3);
         add_action('wp_update_nav_menu', [$this, 'scheduleFlush']);
+        // Menu items edited outside the Menus screen -- Customizer, REST,
+        // WP-CLI, MCP -- fire only these.
+        add_action('wp_add_nav_menu_item', [$this, 'scheduleFlush']);
+        add_action('wp_update_nav_menu_item', [$this, 'scheduleFlush']);
+        add_action('deleted_post', [$this, 'flushForMenuItem'], 10, 2);
         // update_option() on an option that does not exist yet -- the first menu
         // assigned under a new theme -- goes through add_option() instead.
         add_action('added_option', [$this, 'flushForOption']);
@@ -406,31 +413,39 @@ class Endpoint
     }
 
     /**
-     * A published post's catalogue terms, which decide which categories are
-     * listed. Only those: WooCommerce re-sets `product_visibility` whenever a
-     * sale sells a product out.
-     *
-     * @param  array<int|string>  $terms
-     * @param  array<int|string>  $ttIds
-     * @param  array<int|string>  $oldTtIds
+     * A published post gaining or losing a catalogue term, which decides which
+     * categories are listed. Only those: WooCommerce re-sets
+     * `product_visibility` whenever a sale sells a product out. Renaming a
+     * non-catalogue term a menu links to, or one a Yoast template reads, waits
+     * for CACHE_TTL like other template inputs.
      */
-    public function flushForPostTerms(int $objectId, array $terms, array $ttIds, string $taxonomy, bool $append, array $oldTtIds): void
+    public function flushForPostTerm(int $objectId, int $ttId, string $taxonomy): void
+    {
+        $this->flushForPostTerms($objectId, [$ttId], $taxonomy);
+    }
+
+    /**
+     * @param  array<int|string>  $ttIds
+     */
+    public function flushForPostTerms(int $objectId, array $ttIds, string $taxonomy): void
     {
         if (! in_array($taxonomy, (new Catalogue)->taxonomies(), true)) {
             return;
         }
 
-        $ttIds = array_map('intval', $ttIds);
-        $oldTtIds = array_map('intval', $oldTtIds);
-        sort($ttIds);
-        sort($oldTtIds);
-
-        // Appending passes no old terms; it changes something when it adds any.
-        $changed = $append ? $ttIds !== [] : $ttIds !== $oldTtIds;
-
         $post = get_post($objectId);
-        if ($changed && $post && is_post_publicly_viewable($post)) {
+        if ($post && is_post_publicly_viewable($post)) {
             $this->flushForPost($objectId, $post);
+        }
+    }
+
+    /**
+     * flushForPost() skips menu items, which are not a viewable type.
+     */
+    public function flushForMenuItem(int $postId, ?\WP_Post $post = null): void
+    {
+        if ($post && $post->post_type === 'nav_menu_item') {
+            $this->scheduleFlush();
         }
     }
 
