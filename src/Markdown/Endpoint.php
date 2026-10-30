@@ -257,10 +257,14 @@ class Endpoint
         }
 
         (new PageSource)->start(function (string $html): string {
-            $html = FacetWP::fill($html, strtok($this->pageUrl(), '?') ?: $this->pageUrl());
+            $path = strtok($this->pageUrl(), '?') ?: $this->pageUrl();
+            $html = FacetWP::fill($html, $path);
             $markdown = (new Converter($this->pageUrl()))->page($html);
             $this->sendHeaders($markdown, $this->pageUrl());
-            CacheTags::saveUrl(self::url($this->pageUrl()));
+            // Under the path, as content mode saves under the permalink: url()
+            // gives a query string no markdown URL, so `?utm_source=…` would
+            // otherwise save the tags under nothing and escape every purge.
+            CacheTags::saveUrl(self::url($path));
 
             return $markdown;
         });

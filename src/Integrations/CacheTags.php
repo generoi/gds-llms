@@ -24,9 +24,15 @@ class CacheTags
     {
         $cacheTags = class_exists(SageCacheTags::class) ? SageCacheTags::getInstance() : null;
 
-        if ($cacheTags && $url !== '' && self::isCacheableRequest()) {
-            $cacheTags->save($url);
+        if (! $cacheTags || ! self::isCacheableRequest()) {
+            return;
         }
+
+        if ($url === '') {
+            throw new \LogicException('Cache tags saved without a URL to save them under.');
+        }
+
+        $cacheTags->save($url);
     }
 
     /**

@@ -461,6 +461,49 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertFalse($flushed);
     }
 
+    public function test_editing_a_field_the_document_reads_flushes(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertTrue($this->flushesAfter(fn () => wp_update_post(['ID' => $post, 'post_title' => 'Renamed'])));
+    }
+
+    /**
+     * WooCommerce re-saves a product on every sale, changing only its modified
+     * date and stock meta.
+     */
+    public function test_a_save_that_changes_nothing_the_document_reads_does_not_flush(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertFalse($this->flushesAfter(function () use ($post) {
+            wp_update_post(['ID' => $post, 'post_modified' => '2030-01-01 00:00:00']);
+            update_post_meta($post, '_stock', 3);
+        }));
+    }
+
+    public function test_a_yoast_description_change_flushes(): void
+    {
+        $post = self::factory()->post->create();
+
+        $this->assertTrue($this->flushesAfter(fn () => update_post_meta($post, '_yoast_wpseo_metadesc', 'New description')));
+    }
+
+    public function test_forgetting_a_site_drops_its_rules_and_cache(): void
+    {
+        $llmsTxt = new LlmsTxt;
+        $llmsTxt->flushPending();
+        $llmsTxt->body('');
+        update_option(LlmsTxt::REWRITE_VERSION_OPTION, 'x');
+        update_option('rewrite_rules', ['^llms\.txt$' => 'index.php?'.LlmsTxt::QUERY_VAR.'=1']);
+
+        LlmsTxt::forgetSite();
+
+        $this->assertFalse(get_option(LlmsTxt::REWRITE_VERSION_OPTION));
+        $this->assertFalse(get_option('rewrite_rules'));
+        $this->assertSame([], $GLOBALS['wpdb']->get_col("SELECT option_name FROM {$GLOBALS['wpdb']->options} WHERE option_name LIKE '\_transient\_gds\_llms\_txt:%'"));
+    }
+
     public function test_terms_outside_the_catalogue_do_not_flush(): void
     {
         $this->assertFalse($this->flushesAfter(fn () => self::factory()->term->create(['taxonomy' => 'post_tag'])));

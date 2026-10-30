@@ -73,8 +73,12 @@ class Endpoint
         add_action('template_redirect', [$this, 'maybeSend'], 0);
         add_action('admin_init', [Yoast::class, 'disableLlmsTxt']);
 
-        add_action('save_post', [$this, 'flushForPost'], 10, 2);
+        add_action('save_post', [$this, 'flushForNewPost'], 10, 3);
+        add_action('post_updated', [$this, 'flushForUpdatedPost'], 10, 3);
         add_action('deleted_post', [$this, 'flushForPost'], 10, 2);
+        add_action('added_post_meta', [$this, 'flushForPostMeta'], 10, 3);
+        add_action('updated_post_meta', [$this, 'flushForPostMeta'], 10, 3);
+        add_action('deleted_post_meta', [$this, 'flushForPostMeta'], 10, 3);
         add_action('saved_term', [$this, 'flushForTerm'], 10, 3);
         add_action('delete_term', [$this, 'flushForTerm'], 10, 3);
         add_action('wp_update_nav_menu', [$this, 'scheduleFlush']);
@@ -287,6 +291,28 @@ class Endpoint
     }
 
     /**
+     * Deactivation for a site other than the one handling the request, on a
+     * network-wide deactivation. Its rules can't be rebuilt from here -- this
+     * request registered its own -- so they are dropped, and WordPress
+     * regenerates them, without llms.txt, on that site's next request. Its
+     * languages aren't loaded here either: only the root llms.txt is purged,
+     * language copies expire with the page cache.
+     */
+    public static function forgetSite(): void
+    {
+        global $wpdb;
+
+        delete_option('rewrite_rules');
+        delete_option(self::REWRITE_VERSION_OPTION);
+        $wpdb->query($wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
+            $wpdb->esc_like('_transient_'.self::CACHE_KEY.':').'%',
+            $wpdb->esc_like('_transient_timeout_'.self::CACHE_KEY.':').'%',
+        ));
+        Kinsta::purge([home_url('/llms.txt')]);
+    }
+
+    /**
      * Flush once on shutdown however many changes the request made: a product
      * import saves thousands of posts per batch, and each flush is two deletes
      * per language.
@@ -305,6 +331,17 @@ class Endpoint
     }
 
     /**
+     * Post fields the document reads: link labels and URLs, whether an item is
+     * listed, and descriptions (a generated excerpt comes from the content).
+     */
+    public const POST_FIELDS = ['post_title', 'post_excerpt', 'post_content', 'post_status', 'post_name', 'post_parent', 'post_password', 'menu_order'];
+
+    /**
+     * Meta the document reads: Yoast's hand-written description.
+     */
+    public const POST_META = ['_yoast_wpseo_metadesc'];
+
+    /**
      * Only content that can appear in the document: not revisions, autosaves
      * (every minute while someone edits) or orders and other non-public types,
      * which would otherwise flush it on every checkout.
@@ -316,6 +353,42 @@ class Endpoint
         }
 
         $this->scheduleFlush();
+    }
+
+    /**
+     * Updates are post_updated's, which knows what changed.
+     */
+    public function flushForNewPost(int $postId, \WP_Post $post, bool $update): void
+    {
+        if (! $update) {
+            $this->flushForPost($postId, $post);
+        }
+    }
+
+    /**
+     * Only when a field the document reads changed. WooCommerce re-saves a
+     * product on every sale to record its stock and modified date; that must
+     * not rebuild and purge llms.txt each time.
+     */
+    public function flushForUpdatedPost(int $postId, \WP_Post $after, \WP_Post $before): void
+    {
+        foreach (self::POST_FIELDS as $field) {
+            if ($after->$field !== $before->$field) {
+                $this->flushForPost($postId, $after);
+
+                return;
+            }
+        }
+    }
+
+    /**
+     * @param  int|int[]  $metaId
+     */
+    public function flushForPostMeta(int|array $metaId, int $postId, string $key): void
+    {
+        if (in_array($key, self::POST_META, true)) {
+            $this->flushForPost($postId, get_post($postId));
+        }
     }
 
     /**
