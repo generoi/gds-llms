@@ -32,10 +32,14 @@ HTML;
             'id' => 3,
             'title' => 'Contact us',
             'description' => $description,
-            'fields' => array_map(fn (array $field) => (object) ($field + ['description' => '', 'type' => 'text']), $fields ?: [
-                ['id' => 1],
-                ['id' => 2, 'type' => 'email', 'description' => 'We reply within a day.'],
-                ['id' => 4, 'type' => 'name', 'description' => 'Your full name.'],
+            'fields' => array_map(fn (array $field) => (object) ($field + ['description' => '', 'type' => 'text', 'label' => '']), $fields ?: [
+                ['id' => 1, 'label' => 'Name'],
+                ['id' => 2, 'type' => 'email', 'label' => 'Email', 'description' => 'We reply within a day.'],
+                ['id' => 4, 'type' => 'name', 'label' => 'Your name', 'description' => 'Your full name.', 'inputs' => [
+                    ['id' => '4.3', 'label' => 'First'],
+                    ['id' => '4.6', 'label' => 'Last', 'customLabel' => 'Surname'],
+                ]],
+                ['id' => 7, 'label' => 'Company'],
             ]),
         ];
     }
@@ -47,10 +51,11 @@ HTML;
         $this->assertStringContainsString('toolname="contact_us"', $html);
         $this->assertStringContainsString('tooldescription="Fill in the &quot;Contact us&quot; form for the visitor to send."', $html);
         $this->assertStringNotContainsString('toolautosubmit', $html, 'The visitor submits.');
-        $this->assertStringContainsString('toolparamdescription="Required. We reply within a day."', $this->tag($html, 'input_2'));
-        $this->assertStringContainsString('toolparamdescription="Required."', $this->tag($html, 'input_7'), 'GF marks required fields with aria-required only.');
-        $this->assertStringContainsString('toolparamdescription="Your full name."', $this->tag($html, 'input_4.3'));
-        $this->assertStringNotContainsString('toolparamdescription', $this->tag($html, 'input_1'), 'A field without a description keeps its label.');
+        // Chrome uses the description in place of the label, so it leads.
+        $this->assertStringContainsString('toolparamdescription="Email. Required. We reply within a day."', $this->tag($html, 'input_2'));
+        $this->assertStringContainsString('toolparamdescription="Company. Required."', $this->tag($html, 'input_7'), 'GF marks required fields with aria-required only.');
+        $this->assertStringContainsString('toolparamdescription="Your name: First. Your full name."', $this->tag($html, 'input_4.3'));
+        $this->assertStringContainsString('toolparamdescription="Name."', $this->tag($html, 'input_1'));
     }
 
     /**

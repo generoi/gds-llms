@@ -61,8 +61,17 @@ class WebMcp
             return $html;
         }
 
+        // Chrome uses toolparamdescription instead of the field's label, so it
+        // repeats the label: GF's sub-inputs (Name → First) get both.
+        $labels = [];
         $descriptions = [];
         foreach ($form['fields'] ?? [] as $field) {
+            $label = Format::text((string) ($field->label ?? ''));
+            $labels[(string) $field->id] = $label;
+            foreach (is_array($field->inputs ?? null) ? $field->inputs : [] as $input) {
+                $inputLabel = Format::text((string) ($input['customLabel'] ?? $input['label'] ?? ''));
+                $labels[(string) ($input['id'] ?? '')] = $label !== '' && $inputLabel !== '' ? $label.': '.$inputLabel : $label.$inputLabel;
+            }
             $description = Format::text((string) ($field->description ?? ''));
             if ($description !== '') {
                 $descriptions[(string) $field->id] = $description;
@@ -103,16 +112,18 @@ class WebMcp
                 continue;
             }
 
-            if (! preg_match('/^input_(\d+)(?:[._]\d+)?$/', (string) $tags->get_attribute('name'), $match) || $tags->get_attribute('toolparamdescription') !== null) {
+            if (! preg_match('/^input_((\d+)(?:[._]\d+)?)$/', (string) $tags->get_attribute('name'), $match) || $tags->get_attribute('toolparamdescription') !== null) {
                 continue;
             }
 
             // GF marks required fields with aria-required, not `required`, so
             // Chrome's schema would list them as optional. Adding `required`
             // would change how the form looks and validates for visitors.
+            $label = $labels[str_replace('_', '.', $match[1])] ?? $labels[$match[2]] ?? '';
             $parts = array_filter([
+                $label !== '' && ! preg_match('/[.?!:]$/', $label) ? $label.'.' : $label,
                 $tags->get_attribute('aria-required') === 'true' ? __('Required.', 'gds-llms') : '',
-                $descriptions[$match[1]] ?? '',
+                $descriptions[$match[2]] ?? '',
             ]);
             if ($parts) {
                 $tags->set_attribute('toolparamdescription', implode(' ', $parts));
