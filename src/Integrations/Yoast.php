@@ -37,9 +37,9 @@ class Yoast
 
     /**
      * What Yoast would print in a post's `<head>`, or null without Yoast:
-     * description, first Open Graph image and schema graph.
+     * title, description, first Open Graph image and schema graph.
      *
-     * @return array{description: string, image: string, schema: array<mixed>}|null
+     * @return array{title: string, description: string, image: string, schema: array<mixed>}|null
      */
     public static function head(WP_Post $post): ?array
     {
@@ -52,6 +52,7 @@ class Yoast
         $images = $meta->open_graph_images;
 
         return [
+            'title' => (string) ($meta->title ?: ''),
             'description' => (string) ($meta->description ?: ''),
             'image' => $images ? (string) (reset($images)['url'] ?? '') : '',
             'schema' => (array) $meta->schema,

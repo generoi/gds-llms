@@ -76,7 +76,13 @@ class ContentSource implements Source
         $image = ($yoast['image'] ?? '') ?: (string) get_the_post_thumbnail_url($post, 'full');
         $schema = $yoast['schema'] ?? [];
 
-        $head = sprintf('<title>%s</title>', esc_html(get_the_title($post)));
+        // A front page's post title is an admin label ("Home", "_BEAMEX HOME PAGE")
+        // that the theme never shows; visitors see the document's title.
+        $title = (int) get_option('page_on_front') === $post->ID
+            ? (Format::text($yoast['title'] ?? '') ?: get_bloginfo('name'))
+            : get_the_title($post);
+
+        $head = sprintf('<title>%s</title>', esc_html($title));
         $head .= sprintf('<link rel="canonical" href="%s">', esc_url($this->url()));
         $head .= sprintf('<meta property="article:modified_time" content="%s">', esc_attr((string) get_post_modified_time('c', true, $post)));
 
