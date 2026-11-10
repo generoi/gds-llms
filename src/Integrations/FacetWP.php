@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Integrations;
 
+use Dom\Element;
 use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Markdown\Html;
 
@@ -79,7 +80,11 @@ class FacetWP
      * dropdown `<option>`s, and the `data-value` of checkboxes, radios and
      * the like.
      *
-     * @return list<array{string, string}> label and URL
+     * A hierarchical checkbox facet nests its children in `.facetwp-depth`
+     * wrappers and gives a parent a `[+]` toggle to open them; the nesting
+     * is kept as the choice's depth and the toggle dropped.
+     *
+     * @return list<array{string, string, int}> label, URL and depth
      */
     protected static function choices(string $name, string $facetHtml, string $base): array
     {
@@ -92,9 +97,17 @@ class FacetWP
             // A checkbox's label and count are separate spans, run together in textContent.
             $parts = [];
             foreach ($choice->childNodes as $child) {
-                $parts[] = $child->textContent;
+                if (! ($child instanceof Element && $child->classList->contains('facetwp-expand'))) {
+                    $parts[] = $child->textContent;
+                }
             }
-            $links[] = [Format::text(implode(' ', $parts)), self::url($base, [$name => [$value]] + $vars)];
+
+            $depth = 0;
+            for ($parent = $choice->parentElement; $parent; $parent = $parent->parentElement) {
+                $depth += (int) $parent->classList->contains('facetwp-depth');
+            }
+
+            $links[] = [Format::text(implode(' ', $parts)), self::url($base, [$name => [$value]] + $vars), $depth];
         }
 
         return $links;
@@ -138,7 +151,7 @@ class FacetWP
     }
 
     /**
-     * @param  list<array{string, string}>  $links  label and URL
+     * @param  list<array{0: string, 1: string, 2?: int}>  $links  label, URL and depth
      */
     protected static function listHtml(string $label, array $links): string
     {
@@ -146,11 +159,25 @@ class FacetWP
             return '';
         }
 
-        $items = '';
-        foreach ($links as [$text, $url]) {
-            $items .= sprintf('<li><a href="%s">%s</a></li>', esc_url($url), esc_html($text));
+        $html = '<ul>';
+        $depth = 0;
+
+        foreach ($links as $index => $link) {
+            [$text, $url] = $link;
+            $level = min($link[2] ?? 0, $depth + 1);
+
+            if ($index > 0) {
+                // A deeper choice opens a list inside the previous item; a
+                // shallower one closes the lists it was in.
+                $html .= $level > $depth ? '<ul>' : str_repeat('</li></ul>', $depth - $level).'</li>';
+            }
+
+            $html .= sprintf('<li><a href="%s">%s</a>', esc_url($url), esc_html($text));
+            $depth = $level;
         }
 
-        return sprintf('<p><strong>%s</strong></p><ul>%s</ul>', esc_html($label), $items);
+        $html .= str_repeat('</li></ul>', $depth).'</li></ul>';
+
+        return sprintf('<p><strong>%s</strong></p>%s', esc_html($label), $html);
     }
 }

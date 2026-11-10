@@ -78,7 +78,7 @@ class ContentSource implements Source
 
         // A front page's post title is often an admin label ("Home", "Front page")
         // that the theme never shows; visitors see the document's title.
-        $title = (int) get_option('page_on_front') === $post->ID
+        $title = $this->isFrontPage()
             ? (Format::text($yoast['title'] ?? '') ?: get_bloginfo('name'))
             : get_the_title($post);
 
@@ -99,5 +99,22 @@ class ContentSource implements Source
         }
 
         return $head;
+    }
+
+    /**
+     * The front page in any language: Polylang gives each language its own
+     * translation of the page the option names.
+     */
+    protected function isFrontPage(): bool
+    {
+        $front = (int) get_option('page_on_front');
+
+        if ($front === 0) {
+            return false;
+        }
+
+        $pages = function_exists('pll_get_post_translations') ? array_map('intval', pll_get_post_translations($front)) : [];
+
+        return in_array($this->post->ID, [$front, ...$pages], true);
     }
 }
