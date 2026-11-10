@@ -358,6 +358,29 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringContainsString('| S | 10 |', $markdown);
     }
 
+    public function test_a_table_cell_keeps_its_line_breaks(): void
+    {
+        $markdown = $this->convert("<table><tr><th>Unit</th><th>Range</th></tr><tr><td>kPa<br>\n bar<br></td><td>0 … 10<br>0 … 0.1</td></tr></table>");
+
+        $this->assertStringContainsString('| kPa<br>bar | 0 … 10<br>0 … 0.1 |', $markdown);
+        $this->assertStringContainsString('| kPa<br>mbar |', $this->convert('<table><tr><th>Unit</th></tr><tr><td><p>kPa</p><p>mbar</p></td></tr></table>'));
+    }
+
+    public function test_soft_hyphens_are_dropped(): void
+    {
+        $this->assertStringContainsString('calibration certificates', $this->convert("<p>calibration cer\u{00AD}ti\u{00AD}fic\u{00AD}ates</p>"));
+        $this->assertStringContainsString('certificates', $this->convert('<p>cer&shy;tificates</p>'));
+    }
+
+    public function test_bold_inside_a_heading_is_not_repeated(): void
+    {
+        $markdown = $this->convert('<h2><strong>Your partner</strong></h2><h3><a href="/x/"><b>Linked</b></a></h3><p>Some <strong>bold</strong> text</p>');
+
+        $this->assertStringContainsString("## Your partner\n", $markdown);
+        $this->assertStringContainsString('### [Linked](https://example.com/x/)', $markdown);
+        $this->assertStringContainsString('Some **bold** text', $markdown);
+    }
+
     public function test_entities_are_decoded_and_spacer_lines_dropped(): void
     {
         $markdown = $this->convert("<p>Tech &amp; design</p>\n<p>&nbsp;</p>\n<p>Co-founder &amp; CGO</p>");

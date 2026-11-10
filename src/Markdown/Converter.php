@@ -104,8 +104,33 @@ class Converter
         $this->cleanLinks($main);
         $this->removeEmptyListItems($main);
         $this->trimLineStarts($main);
+        $this->keepCellLineBreaks($main);
 
         return $this->doc->saveHtml($main);
+    }
+
+    /**
+     * A table row is one line of markdown, so the converter joins a cell's
+     * lines and paragraphs with spaces, and a cell of one value per line
+     * (`kPa`, `bar`, `psi`) reads as one value. GitHub's tables take a `<br>`
+     * in a cell, which the text survives conversion as; one ending the cell
+     * breaks nothing.
+     */
+    protected function keepCellLineBreaks(Element $main): void
+    {
+        foreach ($main->querySelectorAll('td br, th br') as $br) {
+            $next = $br->nextSibling;
+            while ($next instanceof Text && trim($next->data, self::WHITESPACE) === '') {
+                $next = $next->nextSibling;
+            }
+
+            $next ? $br->replaceWith('<br>') : $br->remove();
+        }
+
+        // Table plugins wrap each line of a cell in a block of its own (Tableberg: div > div > p).
+        foreach ($main->querySelectorAll('td p + p, th p + p, td div + div, th div + div') as $block) {
+            $block->before('<br>');
+        }
     }
 
     protected function toMarkdown(string $html): string
@@ -129,6 +154,11 @@ class Converter
         $markdown = $converter->convert($html);
         // The converter leaves entities encoded, so `&amp;` would reach the reader verbatim.
         $markdown = html_entity_decode($markdown, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // Soft hyphens that a hyphenation plugin puts in every long word are
+        // invisible on the page and to screen readers, but split the word for a model.
+        $markdown = str_replace("\u{00AD}", '', $markdown);
+        // A cell's paragraphs were joined by spaces on either side of their `<br>`.
+        $markdown = Format::replace('/\h*<br>\h*/', '<br>', $markdown);
         // Trailing whitespace means nothing here (hard breaks are newlines):
         // spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing else, and
         // template whitespace moved out of a link can end a line.
