@@ -24,7 +24,7 @@ use GeneroWP\Llms\Markdown\Endpoint as Markdown;
  * question, so anything countable is left to the sitemap it links.
  *
  * @phpstan-type Section array{heading: string, lines: string[]}
- * @phpstan-type Link array{title: string, url: string, description: string}
+ * @phpstan-type Link array{title: string, url: string, description: string, depth: int}
  * @phpstan-type DocumentArray array{title: string, summary: string, intro: array<string, string>, links: string[], sections: Section[]}
  */
 class Document

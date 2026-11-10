@@ -109,7 +109,7 @@ class LlmsTxtTest extends WP_UnitTestCase
 
     /**
      * Mega menus nest a third level under a group's links; those belong to the
-     * group too, not to the header.
+     * group too, not to the header, nested under the link they hang off.
      */
     public function test_items_nested_below_a_group_stay_in_that_group(): void
     {
@@ -121,7 +121,29 @@ class LlmsTxtTest extends WP_UnitTestCase
 
         $body = (new Document)->build('');
 
-        $this->assertStringContainsString("## Products\n- [Pumps](https://example.com/pumps)\n- [Hand pumps](https://example.com/pumps/hand)", $body);
+        $this->assertStringContainsString("## Products\n- [Pumps](https://example.com/pumps)\n  - [Hand pumps](https://example.com/pumps/hand)", $body);
+    }
+
+    /**
+     * A mega menu column without a link of its own ("Workshop calibration") is
+     * a label on the page; it stays one, so its links keep their group. One
+     * left with nothing beneath it says nothing.
+     */
+    public function test_a_column_without_a_link_stays_as_a_label(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $group = $this->customItem($menu, 'Products', 'https://example.com/products/');
+        $column = $this->customItem($menu, 'Workshop calibration', '#', $group);
+        $this->customItem($menu, 'Bench', 'https://example.com/bench/', $column);
+        $empty = $this->customItem($menu, 'Coming soon', '#', $group);
+        $this->customItem($menu, 'Dropped', '#', $empty);
+        $this->customItem($menu, 'Quote', 'https://example.com/quote/', $group);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new Document)->build('');
+
+        $this->assertStringContainsString("## Products\n- [Products](https://example.com/products/)\n- Workshop calibration\n  - [Bench](https://example.com/bench/)\n- [Quote](https://example.com/quote/)", $body);
+        $this->assertStringNotContainsString('Coming soon', $body);
     }
 
     /**
