@@ -86,11 +86,28 @@ class Menus
         $menus = [];
         $seen = [];
 
-        foreach ($this->locations() as $menuId) {
+        foreach ($this->locations() as $location => $menuId) {
             $object = wp_get_nav_menu_object($menuId);
             $children = [];
 
-            foreach (wp_get_nav_menu_items($menuId) ?: [] as $item) {
+            /**
+             * A menu's items as llms.txt reads them: replace one that a menu
+             * plugin renders itself -- a mega menu panel standing in for a
+             * page list -- with the items it stands for.
+             *
+             * @param  object[]  $items  wp_get_nav_menu_items() objects
+             * @param  string  $location  the menu location
+             */
+            $items = (array) apply_filters('gds/llms_txt/menu_items', wp_get_nav_menu_items($menuId) ?: [], $location);
+
+            foreach ($items as $item) {
+                // Polylang's language switcher: the intro already links every
+                // language's llms.txt. Its dropdown's languages hang off the
+                // parent, so skipping that skips them too.
+                if (array_intersect(['lang-item', 'pll-parent-menu-item'], (array) $item->classes)) {
+                    continue;
+                }
+
                 $children[(int) $item->menu_item_parent][] = $item;
             }
 

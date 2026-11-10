@@ -28,6 +28,7 @@ Content that a block draws with JavaScript (maps, HubSpot forms, API-fed carouse
 | Filter | Default | Use |
 |---|---|---|
 | `gds/llms_txt/menus` | every location with a menu assigned, `primary_navigation` first | Drop a location that should not be listed, such as an intranet menu. The first entry is treated as the primary navigation. |
+| `gds/llms_txt/menu_items` | the menu's `wp_get_nav_menu_items()` | Replace an item a menu plugin renders itself, such as a mega menu panel, with the items it stands for. Gets the menu location. Polylang's language switcher is skipped either way. |
 | `gds/llms_txt/taxonomies` | `['product_cat']` | Add a site's own product taxonomy. |
 | `gds/llms_txt/document` | the built document | Everything else: `title`, `summary`, `intro` (sentences keyed `language`, `translations`, `markdown`, `commerce`, `catalogue`, `network`), `links` (header links) and `sections` (`heading`, `lines`). |
 | `gds/llms_txt/network` | `false` | On a multisite, return `true` to link the network's other sites ("Related sites: …"), for sister sites a reader should know about. |

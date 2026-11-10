@@ -158,8 +158,9 @@ class Converter
             $name = Format::text($form->getAttribute('aria-label'))
                 ?: Format::text($this->dom->byId($form->getAttribute('aria-labelledby'))?->textContent);
 
-            // Gravity Forms' honeypot is a labelled field hidden from people by CSS alone.
-            $labels = $this->dom->query('.//label[not(ancestor::*[contains(concat(" ", @class, " "), " gform_validation_container ")])]|.//legend', $form);
+            // Gravity Forms hides its honeypot, and fields set to "Hidden"
+            // visibility, from people by CSS alone.
+            $labels = $this->dom->query('.//label[not(ancestor::*[contains(concat(" ", @class, " "), " gform_validation_container ") or contains(concat(" ", @class, " "), " gfield_visibility_hidden ")])]|.//legend', $form);
             $fields = [];
             foreach ($labels as $label) {
                 $text = Format::text($label->textContent);
@@ -197,10 +198,12 @@ class Converter
 
     /**
      * An embed's content is out of reach, but its title and address are not.
+     * genero-cmp holds third-party iframes back until consent as
+     * `<gds-cmp-embed as="iframe">`, with the iframe's attributes.
      */
     protected function replaceIframes(DOMElement $root): void
     {
-        foreach ($this->dom->query('.//iframe', $root) as $iframe) {
+        foreach ($this->dom->query('.//iframe|.//gds-cmp-embed[@as="iframe"]', $root) as $iframe) {
             $src = $iframe->getAttribute('src') ?: $iframe->getAttribute('data-src');
             $replacement = null;
 
@@ -252,6 +255,7 @@ class Converter
             }
 
             $link->setAttribute('href', $this->absolute($href));
+            $this->trimEdges($link);
 
             if (Format::text($link->textContent) === '' && ! $this->dom->first('.//img', $link)) {
                 $label = Format::text($link->getAttribute('aria-label'));
@@ -291,6 +295,26 @@ class Converter
         }
 
         $this->dom->remove('.//ul[not(li)]|.//ol[not(li)]', $root);
+    }
+
+    /**
+     * Template whitespace inside a link (`<a> Read </a>` from an indented
+     * template) comes out as `[ Read ](url)`; moved outside, it still
+     * separates the link from the text around it.
+     */
+    protected function trimEdges(DOMElement $element): void
+    {
+        $first = $element->firstChild;
+        if ($first instanceof \DOMText && ($text = Format::replace('/^\s+/u', '', $first->data)) !== $first->data) {
+            $first->data = $text;
+            $element->parentNode?->insertBefore($this->doc->createTextNode(' '), $element);
+        }
+
+        $last = $element->lastChild;
+        if ($last instanceof \DOMText && ($text = Format::replace('/\s+$/u', '', $last->data)) !== $last->data) {
+            $last->data = $text;
+            $element->parentNode?->insertBefore($this->doc->createTextNode(' '), $element->nextSibling);
+        }
     }
 
     protected function absolute(string $url): string
