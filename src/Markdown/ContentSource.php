@@ -76,7 +76,7 @@ class ContentSource implements Source
         $image = ($yoast['image'] ?? '') ?: (string) get_the_post_thumbnail_url($post, 'full');
         $schema = $yoast['schema'] ?? [];
 
-        // A front page's post title is an admin label ("Home", "_BEAMEX HOME PAGE")
+        // A front page's post title is often an admin label ("Home", "Front page")
         // that the theme never shows; visitors see the document's title.
         $title = (int) get_option('page_on_front') === $post->ID
             ? (Format::text($yoast['title'] ?? '') ?: get_bloginfo('name'))
