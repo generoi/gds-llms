@@ -93,6 +93,15 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringContainsString("price: \"129.00\"\ncurrency: \"EUR\"\navailability: \"in stock\"\nsku: \"P-1\"\n---", $markdown);
     }
 
+    public function test_frontmatter_has_the_add_to_cart_links(): void
+    {
+        $simple = $this->page('<h1>Pump</h1>', '<title>Pump</title><meta name="gds-llms:add-to-cart" content="https://example.com/pump/?add-to-cart=1" data-label="">');
+        $variable = $this->page('<h1>Ring</h1>', '<title>Ring</title><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=2" data-label="Size: 52"><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=3" data-label="Size: 54">');
+
+        $this->assertStringContainsString("add_to_cart: \"https://example.com/pump/?add-to-cart=1\"\n", $simple);
+        $this->assertStringContainsString("add_to_cart: {\"Size: 52\":\"https://example.com/ring/?add-to-cart=2\",\"Size: 54\":\"https://example.com/ring/?add-to-cart=3\"}\n", $variable);
+    }
+
     /**
      * WooCommerce's own structured data, as Yoast merges it into one graph.
      */

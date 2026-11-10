@@ -39,6 +39,7 @@ class Frontmatter
             'currency' => $this->meta('product:price:currency') ?: $offer['priceCurrency'],
             'availability' => $this->meta('product:availability') ?: $offer['availability'],
             'sku' => $this->meta('product:retailer_item_id') ?: $offer['sku'],
+            'add_to_cart' => $this->addToCart(),
         ];
 
         $lines = [];
@@ -89,6 +90,24 @@ class Frontmatter
         }
 
         return $translations;
+    }
+
+    /**
+     * The links that put the product in the cart, from the WooCommerce
+     * integration's `gds-llms:add-to-cart` tags: the one URL of a simple
+     * product, else each URL keyed by what tells it apart (a variation's
+     * attributes), as a one-line mapping like the translations.
+     *
+     * @return string|array<string, string>
+     */
+    protected function addToCart(): string|array
+    {
+        $links = [];
+        foreach ($this->doc->querySelectorAll('meta[name="gds-llms:add-to-cart"][content]') as $meta) {
+            $links[(string) $meta->getAttribute('data-label')] = (string) $meta->getAttribute('content');
+        }
+
+        return array_keys($links) === [''] ? $links[''] : $links;
     }
 
     /**

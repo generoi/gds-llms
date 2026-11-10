@@ -13,35 +13,49 @@ class WooCommerce
     {
         add_action('gds/llms/markdown_dom', [self::class, 'clean']);
         add_filter('gds/llms/markdown_content', [self::class, 'productDetails'], 10, 2);
-        add_filter('gds/llms/markdown_content', [self::class, 'addToCart'], 10, 2);
     }
 
     /**
-     * A product page's link that puts the product in the cart, for a product
-     * that can go straight in: in stock, and with no options to choose first.
-     * Built on the permalink, as add_to_cart_url() would build it on the
+     * The links that put the product in the cart, keyed by what tells them
+     * apart: '' for a simple product, a variation's attributes, a grouped
+     * product's child. Only what can go in as it is: in stock, and for a
+     * variation, with no "any" attribute left to choose.
+     *
+     * Built on the permalink, as add_to_cart_url() would build them on the
      * markdown URL being served.
+     *
+     * @return array<string, string>
      */
-    public static function addToCart(string $content, WP_Post $post): string
+    protected static function addToCartLinks(\WC_Product $product): array
     {
-        if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post))) {
-            return $content;
+        $buyable = fn ($item) => $item instanceof \WC_Product && $item->is_purchasable() && $item->is_in_stock();
+        $url = fn (int $id) => add_query_arg('add-to-cart', $id, $product->get_permalink());
+        $links = [];
+
+        if ($product->is_type('variable')) {
+            foreach ($product->get_children() as $id) {
+                $variation = wc_get_product($id);
+                if ($variation instanceof \WC_Product_Variation && $buyable($variation) && ! in_array('', $variation->get_variation_attributes(), true)) {
+                    $links[Format::text(wc_get_formatted_variation($variation, true))] = $url($id);
+                }
+            }
+        } elseif ($product->is_type('grouped')) {
+            foreach ($product->get_children() as $id) {
+                $child = wc_get_product($id);
+                if ($buyable($child) && $child->supports('ajax_add_to_cart')) {
+                    $links[Format::text($child->get_name())] = $url($id);
+                }
+            }
+        } elseif ($buyable($product) && $product->supports('ajax_add_to_cart')) {
+            $links[''] = $url($product->get_id());
         }
 
-        if (! $product->is_purchasable() || ! $product->is_in_stock() || ! $product->supports('ajax_add_to_cart')) {
-            return $content;
-        }
-
-        return $content.sprintf(
-            '<p><a href="%s">%s</a></p>',
-            esc_url(add_query_arg('add-to-cart', $product->get_id(), $product->get_permalink())),
-            esc_html($product->single_add_to_cart_text()),
-        );
+        return $links;
     }
 
     /**
      * A listing's add-to-cart buttons, one per product; the product's own
-     * page has the link instead.
+     * markdown has its links in the frontmatter.
      */
     public static function clean(Element $main): void
     {
@@ -145,6 +159,10 @@ class WooCommerce
         $head = '';
         foreach (array_filter($tags, fn ($value) => $value !== '') as $property => $value) {
             $head .= sprintf('<meta property="%s" content="%s">', esc_attr($property), esc_attr((string) $value));
+        }
+
+        foreach (self::addToCartLinks($product) as $label => $url) {
+            $head .= sprintf('<meta name="gds-llms:add-to-cart" content="%s" data-label="%s">', esc_url($url), esc_attr((string) $label));
         }
 
         return $head;
