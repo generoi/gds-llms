@@ -16,41 +16,59 @@ class WooCommerce
     }
 
     /**
-     * The links that put the product in the cart, keyed by what tells them
-     * apart: '' for a simple product, a variation's attributes, a grouped
+     * What can be put in the cart from the product's page, keyed by what tells
+     * it apart: '' for a simple product, a variation's attributes, a grouped
      * product's child. Only what can go in as it is: in stock, and for a
      * variation, with no "any" attribute left to choose.
      *
-     * Built on the permalink, as add_to_cart_url() would build them on the
-     * markdown URL being served.
-     *
-     * @return array<string, string>
+     * @return array<string, \WC_Product>
      */
-    protected static function addToCartLinks(\WC_Product $product): array
+    protected static function cartItems(\WC_Product $product): array
     {
         $buyable = fn ($item) => $item instanceof \WC_Product && $item->is_purchasable() && $item->is_in_stock();
-        $url = fn (int $id) => add_query_arg('add-to-cart', $id, $product->get_permalink());
-        $links = [];
+        $items = [];
 
         if ($product->is_type('variable')) {
             foreach ($product->get_children() as $id) {
                 $variation = wc_get_product($id);
                 if ($variation instanceof \WC_Product_Variation && $buyable($variation) && ! in_array('', $variation->get_variation_attributes(), true)) {
-                    $links[Format::text(wc_get_formatted_variation($variation, true))] = $url($id);
+                    $items[Format::text(wc_get_formatted_variation($variation, true))] = $variation;
                 }
             }
         } elseif ($product->is_type('grouped')) {
             foreach ($product->get_children() as $id) {
                 $child = wc_get_product($id);
                 if ($buyable($child) && $child->supports('ajax_add_to_cart')) {
-                    $links[Format::text($child->get_name())] = $url($id);
+                    $items[Format::text($child->get_name())] = $child;
                 }
             }
         } elseif ($buyable($product) && $product->supports('ajax_add_to_cart')) {
-            $links[''] = $url($product->get_id());
+            $items[''] = $product;
         }
 
-        return $links;
+        return $items;
+    }
+
+    /**
+     * The price the shop displays (with or without tax, as it is set up), ''
+     * for a product sold on quote.
+     */
+    protected static function displayPrice(\WC_Product $product): string
+    {
+        return $product->get_price() === '' ? '' : (string) wc_format_decimal(wc_get_price_to_display($product), wc_get_price_decimals());
+    }
+
+    /**
+     * Stock status in Open Graph's words.
+     */
+    protected static function availability(\WC_Product $product): string
+    {
+        return match ($product->get_stock_status()) {
+            'instock' => 'in stock',
+            'outofstock' => 'out of stock',
+            'onbackorder' => 'available for order',
+            default => '',
+        };
     }
 
     /**
@@ -79,7 +97,7 @@ class WooCommerce
                 /* translators: %s: currency code, e.g. EUR */
                 : __('Products can be bought online. Prices are in %s and exclude VAT.', 'gds-llms'),
             get_woocommerce_currency(),
-        );
+        ).' '.__('A product\'s markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one.', 'gds-llms');
     }
 
     /**
@@ -145,14 +163,9 @@ class WooCommerce
         }
 
         $tags = [
-            'product:price:amount' => $product->get_price() === '' ? '' : wc_format_decimal(wc_get_price_to_display($product), wc_get_price_decimals()),
+            'product:price:amount' => self::displayPrice($product),
             'product:price:currency' => $product->get_price() === '' ? '' : get_woocommerce_currency(),
-            'product:availability' => match ($product->get_stock_status()) {
-                'instock' => 'in stock',
-                'outofstock' => 'out of stock',
-                'onbackorder' => 'available for order',
-                default => '',
-            },
+            'product:availability' => self::availability($product),
             'product:retailer_item_id' => $product->get_sku(),
         ];
 
@@ -161,8 +174,16 @@ class WooCommerce
             $head .= sprintf('<meta property="%s" content="%s">', esc_attr($property), esc_attr((string) $value));
         }
 
-        foreach (self::addToCartLinks($product) as $label => $url) {
-            $head .= sprintf('<meta name="gds-llms:add-to-cart" content="%s" data-label="%s">', esc_url($url), esc_attr((string) $label));
+        // On the permalink, as add_to_cart_url() would build them on the
+        // markdown URL being served.
+        foreach (self::cartItems($product) as $label => $item) {
+            $head .= sprintf(
+                '<meta name="gds-llms:add-to-cart" content="%s" data-label="%s" data-price="%s" data-availability="%s">',
+                esc_url(add_query_arg('add-to-cart', $item->get_id(), $product->get_permalink())),
+                esc_attr((string) $label),
+                esc_attr(self::displayPrice($item)),
+                esc_attr(self::availability($item)),
+            );
         }
 
         return $head;

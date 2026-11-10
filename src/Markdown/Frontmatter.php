@@ -95,19 +95,25 @@ class Frontmatter
     /**
      * The links that put the product in the cart, from the WooCommerce
      * integration's `gds-llms:add-to-cart` tags: the one URL of a simple
-     * product, else each URL keyed by what tells it apart (a variation's
-     * attributes), as a one-line mapping like the translations.
+     * product, whose price and availability are the page's own; else each
+     * option keyed by what tells it apart (a variation's attributes), with
+     * its own price and availability, as a one-line mapping like the
+     * translations.
      *
-     * @return string|array<string, string>
+     * @return string|array<string, array<string, string>>
      */
     protected function addToCart(): string|array
     {
-        $links = [];
+        $options = [];
         foreach ($this->doc->querySelectorAll('meta[name="gds-llms:add-to-cart"][content]') as $meta) {
-            $links[(string) $meta->getAttribute('data-label')] = (string) $meta->getAttribute('content');
+            $options[(string) $meta->getAttribute('data-label')] = array_filter([
+                'url' => (string) $meta->getAttribute('content'),
+                'price' => (string) $meta->getAttribute('data-price'),
+                'availability' => (string) $meta->getAttribute('data-availability'),
+            ]);
         }
 
-        return array_keys($links) === [''] ? $links[''] : $links;
+        return array_keys($options) === [''] ? ($options['']['url'] ?? '') : $options;
     }
 
     /**

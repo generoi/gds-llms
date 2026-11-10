@@ -96,10 +96,10 @@ class ConverterTest extends WP_UnitTestCase
     public function test_frontmatter_has_the_add_to_cart_links(): void
     {
         $simple = $this->page('<h1>Pump</h1>', '<title>Pump</title><meta name="gds-llms:add-to-cart" content="https://example.com/pump/?add-to-cart=1" data-label="">');
-        $variable = $this->page('<h1>Ring</h1>', '<title>Ring</title><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=2" data-label="Size: 52"><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=3" data-label="Size: 54">');
+        $variable = $this->page('<h1>Ring</h1>', '<title>Ring</title><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=2" data-label="Size: 52" data-price="100.00" data-availability="in stock"><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=3" data-label="Size: 54" data-price="120.00" data-availability="available for order">');
 
         $this->assertStringContainsString("add_to_cart: \"https://example.com/pump/?add-to-cart=1\"\n", $simple);
-        $this->assertStringContainsString("add_to_cart: {\"Size: 52\":\"https://example.com/ring/?add-to-cart=2\",\"Size: 54\":\"https://example.com/ring/?add-to-cart=3\"}\n", $variable);
+        $this->assertStringContainsString('add_to_cart: {"Size: 52":{"url":"https://example.com/ring/?add-to-cart=2","price":"100.00","availability":"in stock"},"Size: 54":{"url":"https://example.com/ring/?add-to-cart=3","price":"120.00","availability":"available for order"}}'."\n", $variable);
     }
 
     /**
