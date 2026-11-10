@@ -42,6 +42,8 @@ class Format
     {
         $value = wp_strip_all_tags((string) $value);
         $value = html_entity_decode($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        // A soft hyphen is a hyphenation hint, not a character of the word.
+        $value = str_replace("\u{00AD}", '', $value);
 
         return trim(self::replace('/[\s\x{00A0}\x{200B}\x{FEFF}]+/u', ' ', $value));
     }
