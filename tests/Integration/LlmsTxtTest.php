@@ -310,6 +310,59 @@ class LlmsTxtTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('Staff handbook', $body);
     }
 
+    /**
+     * The intro already links every language's llms.txt; Polylang's switcher
+     * (here as its dropdown) would list the languages again as a section.
+     */
+    public function test_the_language_switcher_is_not_listed(): void
+    {
+        $menu = wp_create_nav_menu('Main');
+        $this->customItem($menu, 'Contact', 'https://example.com/contact/');
+        $switcher = $this->menuItem($menu, ['menu-item-title' => 'EN', 'menu-item-url' => 'https://example.com/', 'menu-item-type' => 'custom', 'menu-item-classes' => 'pll-parent-menu-item']);
+        $this->menuItem($menu, ['menu-item-title' => 'FI', 'menu-item-url' => 'https://example.com/fi/', 'menu-item-type' => 'custom', 'menu-item-classes' => 'lang-item lang-item-fi', 'menu-item-parent-id' => $switcher]);
+        $this->menuItem($menu, ['menu-item-title' => 'SV', 'menu-item-url' => 'https://example.com/sv/', 'menu-item-type' => 'custom', 'menu-item-classes' => 'lang-item lang-item-sv']);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $body = (new Document)->build('');
+
+        $this->assertStringContainsString('- [Contact](https://example.com/contact/)', $body);
+        $this->assertStringNotContainsString('## EN', $body);
+        $this->assertStringNotContainsString('[FI]', $body);
+        $this->assertStringNotContainsString('[SV]', $body);
+    }
+
+    /**
+     * A mega menu plugin's panel item stands for pages the site can name.
+     */
+    public function test_menu_items_are_filterable(): void
+    {
+        $page = self::factory()->post->create(['post_type' => 'page', 'post_title' => 'Pumps']);
+        $menu = wp_create_nav_menu('Main');
+        $products = $this->customItem($menu, 'Products', 'https://example.com/products/');
+        $this->customItem($menu, 'Panel', 'https://example.com/?mega_menu_block=products', $products);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+        $filter = function (array $items, string $location) use ($page) {
+            $this->assertSame('primary_navigation', $location);
+
+            return array_map(function (object $item) use ($page) {
+                if (! str_contains($item->url, 'mega_menu_block')) {
+                    return $item;
+                }
+                $replacement = wp_setup_nav_menu_item(get_post($page));
+                $replacement->menu_item_parent = $item->menu_item_parent;
+
+                return $replacement;
+            }, $items);
+        };
+
+        add_filter('gds/llms_txt/menu_items', $filter, 10, 2);
+        $body = (new Document)->build('');
+        remove_filter('gds/llms_txt/menu_items', $filter);
+
+        $this->assertStringContainsString("## Products\n- [Products](https://example.com/products/)\n- [Pumps](".get_permalink($page).')', $body);
+        $this->assertStringNotContainsString('mega_menu_block', $body);
+    }
+
     public function test_catalogue_lists_the_top_level_of_a_taxonomy(): void
     {
         register_taxonomy('catalogue', 'post', ['public' => true, 'label' => 'Catalogue']);

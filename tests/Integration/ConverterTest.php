@@ -216,12 +216,14 @@ class ConverterTest extends WP_UnitTestCase
             '<form aria-label="Contact us"><label for="n">Name (Required)</label><input id="n">'
             .'<fieldset><legend>Topic</legend><label><input type="radio">Sales</label></fieldset>'
             .'<div class="gform_validation_container"><label>Comments</label><input></div>'
+            .'<div class="gfield gfield_visibility_hidden"><label>Website</label><input></div>'
             .'<button type="submit">Send</button></form>'
         );
 
         $this->assertStringContainsString('**Form: Contact us** (fill it in on [the web page](https://example.com/page/)). Fields:', $markdown);
         $this->assertStringContainsString("- Name (Required)\n- Topic\n- Sales", $markdown);
         $this->assertStringNotContainsString('Comments', $markdown);
+        $this->assertStringNotContainsString('Website', $markdown);
         $this->assertStringNotContainsString('Send', $markdown);
     }
 
@@ -236,6 +238,13 @@ class ConverterTest extends WP_UnitTestCase
 
         $this->assertStringContainsString('[Embedded: Office location](https://maps.example.com/embed?q=1)', $markdown);
         $this->assertStringContainsString('[Embedded content](https://example.com/app/uploads/model/)', $markdown);
+    }
+
+    public function test_iframes_held_back_for_consent_become_links(): void
+    {
+        $markdown = $this->convert('<gds-cmp-embed as="iframe" consent="marketing" title="Company video" src="https://www.youtube.com/embed/abc"></gds-cmp-embed>');
+
+        $this->assertStringContainsString('[Embedded: Company video](https://www.youtube.com/embed/abc)', $markdown);
     }
 
     public function test_decorative_and_unnamed_images_are_dropped(): void
@@ -262,6 +271,13 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('#comments', $markdown);
         $this->assertStringNotContainsString('/empty/', $markdown);
         $this->assertStringContainsString('[Read the story](https://example.com/labelled/)', $markdown);
+    }
+
+    public function test_template_whitespace_inside_a_link_is_moved_outside_it(): void
+    {
+        $markdown = $this->convert("<p>Brochure<a href=\"/brochure.pdf\">\n   Download\n </a>today</p>");
+
+        $this->assertStringContainsString('Brochure [Download](https://example.com/brochure.pdf) today', $markdown);
     }
 
     public function test_a_heading_inside_a_link_links_the_heading_text(): void
