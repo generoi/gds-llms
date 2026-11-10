@@ -319,6 +319,21 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringContainsString("\n### [Ring](https://example.com/ring/)\n", $this->convert("<h3>\n  <a href=\"/ring/\"> Ring </a>\n</h3>"));
     }
 
+    public function test_template_indentation_does_not_indent_lines(): void
+    {
+        $markdown = $this->convert(
+            "<div>\n  <div class=\"price\">\n    <span>4450,00&nbsp;€</span>\n  </div>\n  <div>\n    <a href=\"/tank/\">\n      Katso tuote\n    </a>\n  </div>\n</div>"
+            ."<p>\n  First line<br>\n  Second line</p>"
+            .'<ul><li>Watches<ul><li>Cartier</li></ul></li></ul>'
+            ."<pre>  indented\n    code</pre>"
+        );
+
+        $this->assertStringContainsString("\n4450,00\u{00A0}€\n\n[Katso tuote](https://example.com/tank/)\n", $markdown);
+        $this->assertStringContainsString("\nFirst line\nSecond line\n", $markdown);
+        $this->assertStringContainsString("- Watches\n    - Cartier", $markdown);
+        $this->assertStringContainsString("  indented\n    code", $markdown);
+    }
+
     public function test_a_heading_inside_a_link_links_the_heading_text(): void
     {
         $markdown = $this->convert('<a href="https://youtube.com/watch?v=1"><h2>Calibration day</h2></a>');
