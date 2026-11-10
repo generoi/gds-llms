@@ -342,13 +342,13 @@ class LlmsTxtTest extends WP_UnitTestCase
             'post_type' => 'page',
             'post_title' => 'Contact',
             'post_excerpt' => '',
-            'post_content' => '<p>Holmasto<br>Aleksanterinkatu 50</p><table><tr><td>Au</td><td>gold</td></tr></table>',
+            'post_content' => '<p>Acme<br>Main Street 1</p><table><tr><td>Au</td><td>gold</td></tr></table>',
         ]);
         $menu = wp_create_nav_menu('Main');
         $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type']);
         set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
 
-        $this->assertStringContainsString('): Holmasto Aleksanterinkatu 50 Au gold', (new Document)->build(''));
+        $this->assertStringContainsString('): Acme Main Street 1 Au gold', (new Document)->build(''));
     }
 
     /**

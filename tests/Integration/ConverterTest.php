@@ -237,6 +237,22 @@ class ConverterTest extends WP_UnitTestCase
     }
 
     /**
+     * A calculator built of buttons and inputs outside a <form>, named as one
+     * for screen readers, reads as a form rather than as loose labels.
+     */
+    public function test_a_role_form_widget_is_described_like_a_form(): void
+    {
+        $markdown = $this->convert(
+            '<div role="form" aria-label="Sensor calculator"><label for="s">Sensor</label><button id="s"></button>'
+            .'<div aria-hidden="true">▼</div><label for="v">Input</label><input id="v"><div id="out">--</div></div><p>After</p>'
+        );
+
+        $this->assertStringContainsString("**Form: Sensor calculator** (fill it in on [the web page](https://example.com/page/)). Fields:\n\n- Sensor\n- Input", $markdown);
+        $this->assertStringNotContainsString('--', $markdown);
+        $this->assertStringContainsString('After', $markdown);
+    }
+
+    /**
      * WooCommerce's product grid: the card link wraps the image and title in
      * <div>s, and the price is a <div> after it.
      */

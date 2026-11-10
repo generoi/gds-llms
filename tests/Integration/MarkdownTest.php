@@ -201,6 +201,23 @@ class MarkdownTest extends WP_UnitTestCase
     }
 
     /**
+     * A front page's post title is an admin label; without Yoast the site's
+     * name stands in for it.
+     */
+    public function test_the_front_page_is_titled_after_the_site(): void
+    {
+        $page = self::factory()->post->create_and_get(['post_type' => 'page', 'post_title' => '_HOME PAGE', 'post_content' => '<p>Welcome</p>']);
+        update_option('show_on_front', 'page');
+        update_option('page_on_front', $page->ID);
+        update_option('blogname', 'Acme');
+
+        $markdown = (new Markdown)->markdown(new ContentSource($page));
+
+        $this->assertStringContainsString('title: "Acme"', $markdown);
+        $this->assertStringNotContainsString('_HOME PAGE', $markdown);
+    }
+
+    /**
      * What a template renders outside the content, added for the markdown only.
      */
     public function test_content_is_filterable_before_conversion(): void

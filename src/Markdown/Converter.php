@@ -207,11 +207,13 @@ class Converter
 
     /**
      * A form cannot be filled in from markdown, but a reader should know it is
-     * there and what it asks for.
+     * there and what it asks for. A widget that is a form to screen readers
+     * (`role="form"`) without being a `<form>` -- a calculator whose buttons
+     * must not submit anything -- is one too.
      */
     protected function describeForms(Element $main): void
     {
-        foreach ($main->querySelectorAll('form') as $form) {
+        foreach ($main->querySelectorAll('form, [role="form"]') as $form) {
             $name = Format::text($form->getAttribute('aria-label'))
                 ?: Format::text(Html::referenced($this->doc, (string) $form->getAttribute('aria-labelledby'))?->textContent);
 

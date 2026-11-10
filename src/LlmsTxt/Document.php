@@ -184,7 +184,7 @@ class Document
 
         // WordPress strips the rendered content's tags without leaving a space,
         // so table cells and lines split by <br> run together
-        // ("HolmastoAleksanterinkatu 50"). A space before each break and
+        // ("AcmeMain Street 1"). A space before each break and
         // block-level closing tag keeps them apart.
         $space = fn (string $html) => Format::replace('#(?=<br\b|</(?:p|div|li|dt|dd|td|th|tr|h[1-6]|figcaption|blockquote)>)#i', ' ', $html);
         add_filter('the_content', $space, PHP_INT_MAX);
