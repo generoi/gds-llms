@@ -93,6 +93,15 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringContainsString("price: \"129.00\"\ncurrency: \"EUR\"\navailability: \"in stock\"\nsku: \"P-1\"\n---", $markdown);
     }
 
+    public function test_frontmatter_has_the_add_to_cart_links(): void
+    {
+        $simple = $this->page('<h1>Pump</h1>', '<title>Pump</title><meta name="gds-llms:add-to-cart" content="https://example.com/pump/?add-to-cart=1" data-label="">');
+        $variable = $this->page('<h1>Ring</h1>', '<title>Ring</title><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=2" data-label="Size: 52" data-price="100.00" data-availability="in stock"><meta name="gds-llms:add-to-cart" content="https://example.com/ring/?add-to-cart=3" data-label="Size: 54" data-price="120.00" data-availability="available for order">');
+
+        $this->assertStringContainsString("add_to_cart: \"https://example.com/pump/?add-to-cart=1\"\n", $simple);
+        $this->assertStringContainsString('add_to_cart: {"Size: 52":{"url":"https://example.com/ring/?add-to-cart=2","price":"100.00","availability":"in stock"},"Size: 54":{"url":"https://example.com/ring/?add-to-cart=3","price":"120.00","availability":"available for order"}}'."\n", $variable);
+    }
+
     /**
      * WooCommerce's own structured data, as Yoast merges it into one graph.
      */
@@ -317,6 +326,21 @@ class ConverterTest extends WP_UnitTestCase
 
         $this->assertStringContainsString('Brochure [Download](https://example.com/brochure.pdf) today', $markdown);
         $this->assertStringContainsString("\n### [Ring](https://example.com/ring/)\n", $this->convert("<h3>\n  <a href=\"/ring/\"> Ring </a>\n</h3>"));
+    }
+
+    public function test_template_indentation_does_not_indent_lines(): void
+    {
+        $markdown = $this->convert(
+            "<div>\n  <div class=\"price\">\n    <span>4450,00&nbsp;€</span>\n  </div>\n  <div>\n    <a href=\"/tank/\">\n      Katso tuote\n    </a>\n  </div>\n</div>"
+            ."<p>\n  First line<br>\n  Second line</p>"
+            .'<ul><li>Watches<ul><li>Cartier</li></ul></li></ul>'
+            ."<pre>  indented\n    code</pre>"
+        );
+
+        $this->assertStringContainsString("\n4450,00\u{00A0}€\n\n[Katso tuote](https://example.com/tank/)\n", $markdown);
+        $this->assertStringContainsString("\nFirst line\nSecond line\n", $markdown);
+        $this->assertStringContainsString("- Watches\n    - Cartier", $markdown);
+        $this->assertStringContainsString("  indented\n    code", $markdown);
     }
 
     public function test_a_heading_inside_a_link_links_the_heading_text(): void

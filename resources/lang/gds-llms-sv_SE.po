@@ -1,11 +1,14 @@
-# Copyright (C) 2026 Genero
-# This file is distributed under the MIT.
 msgid ""
 msgstr ""
 "Project-Id-Version: GDS LLMs 0.1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2026-11-10T12:55:14+00:00\n"
+"PO-Revision-Date: 2026-11-10T12:55:14+00:00\n"
 "Language: sv_SE\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 "X-Domain: gds-llms\n"
@@ -25,13 +28,13 @@ msgid "%1$s, page %2$d of %3$d."
 msgstr "%1$s, sida %2$d av %3$d."
 
 #. translators: %s: currency code, e.g. EUR
-#: src/Integrations/WooCommerce.php:23
+#: src/Integrations/WooCommerce.php:96
 #, php-format
 msgid "Products can be bought online. Prices are in %s and include VAT."
 msgstr "Produkterna kan köpas online. Priserna anges i %s inklusive moms."
 
 #. translators: %s: currency code, e.g. EUR
-#: src/Integrations/WooCommerce.php:25
+#: src/Integrations/WooCommerce.php:98
 #, php-format
 msgid "Products can be bought online. Prices are in %s and exclude VAT."
 msgstr "Produkterna kan köpas online. Priserna anges i %s exklusive moms."
@@ -45,73 +48,104 @@ msgstr[0] "%1$s produkt är ordnad under %2$s."
 msgstr[1] "De %1$s produkterna är ordnade under %2$s."
 
 #. translators: %s: language name
-#: src/LlmsTxt/Document.php:226
+#: src/LlmsTxt/Document.php:241
 #, php-format
 msgid "Written in %s."
 msgstr "Språk: %s."
 
 #. translators: %s: list of language links
-#: src/LlmsTxt/Document.php:257
+#: src/LlmsTxt/Document.php:272
 #, php-format
 msgid "Also available in %s."
 msgstr "Finns även på %s."
 
-#. translators: %s: URL suffix, e.g. `index.html.md`
-#: src/LlmsTxt/Document.php:270
+#. translators: %s: URL suffix, e.g. `md/`
+#: src/LlmsTxt/Document.php:285
 #, php-format
 msgid "Every page is also available as markdown at its URL followed by `%s`."
 msgstr "Varje sida finns även som markdown på sin adress följd av `%s`."
 
 #. translators: 1: site link, 2: language name
-#: src/LlmsTxt/Document.php:309
+#: src/LlmsTxt/Document.php:324
 #, php-format
 msgid "%1$s in %2$s"
 msgstr "%1$s (%2$s)"
 
 #. translators: %s: list of site links
-#: src/LlmsTxt/Document.php:313
+#: src/LlmsTxt/Document.php:328
 #, php-format
 msgid "Related sites: %s."
 msgstr "Relaterade webbplatser: %s."
 
-#: src/LlmsTxt/Document.php:328
+#: src/LlmsTxt/Document.php:343
 msgid "Sitemap"
 msgstr "Webbplatskarta"
 
-#: src/LlmsTxt/Document.php:328
+#: src/LlmsTxt/Document.php:343
 msgid "Every indexable URL, split by content type."
 msgstr "Alla indexerbara adresser, uppdelade per innehållstyp."
 
 #. translators: %s: form name
-#: src/Markdown/Converter.php:172
+#: src/Markdown/Converter.php:197
 #, php-format
 msgid "Form: %s"
 msgstr "Formulär: %s"
 
-#: src/Markdown/Converter.php:172
+#. translators: %s: form name
+#: src/Markdown/Converter.php:197
 msgid "Form"
 msgstr "Formulär"
 
 #. translators: %s: a link reading "the web page"
-#: src/Markdown/Converter.php:175
+#: src/Markdown/Converter.php:200
 #, php-format
 msgid "(fill it in on %s)"
 msgstr "(fyll i det på %s)"
 
-#: src/Markdown/Converter.php:178
+#: src/Markdown/Converter.php:203
 msgid "the web page"
 msgstr "webbsidan"
 
-#: src/Markdown/Converter.php:181
+#: src/Markdown/Converter.php:204
 msgid "Fields:"
 msgstr "Fält:"
 
 #. translators: %s: title of an embedded map, video or app
-#: src/Markdown/Converter.php:212
+#: src/Markdown/Converter.php:238
 #, php-format
 msgid "Embedded: %s"
 msgstr "Inbäddat: %s"
 
-#: src/Markdown/Converter.php:212
+#. translators: %s: title of an embedded map, video or app
+#: src/Markdown/Converter.php:238
 msgid "Embedded content"
 msgstr "Inbäddat innehåll"
+
+#. Plugin Name of the plugin
+#: gds-llms.php
+msgid "LLMs"
+msgstr ""
+
+#. Plugin URI of the plugin
+#: gds-llms.php
+msgid "https://github.com/generoi/gds-llms"
+msgstr ""
+
+#. Description of the plugin
+#: gds-llms.php
+msgid "Serves /llms.txt and a markdown version of every page for language models"
+msgstr ""
+
+#. Author of the plugin
+#: gds-llms.php
+msgid "Genero"
+msgstr ""
+
+#. Author URI of the plugin
+#: gds-llms.php
+msgid "https://genero.fi/"
+msgstr ""
+
+#: src/Integrations/WooCommerce.php:100
+msgid "A product's markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one."
+msgstr "Länkarna som lägger produkten i varukorgen finns i fältet `add_to_cart` i frontmattern i produktens markdown; lägg till `&quantity=2` i en länk för att köpa fler än en."

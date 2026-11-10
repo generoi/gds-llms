@@ -5,6 +5,7 @@ namespace GeneroWP\Llms\Markdown;
 use Dom\Element;
 use Dom\HTMLDocument;
 use Dom\Node;
+use Dom\Text;
 use GeneroWP\Llms\Format;
 use GeneroWP\Llms\Markdown\Converters\DivConverter;
 use GeneroWP\Llms\Markdown\Converters\EmphasisConverter;
@@ -28,6 +29,16 @@ use WP_Http;
  */
 class Converter
 {
+    /**
+     * Elements that start a line of their own, and end one.
+     */
+    protected const BLOCKS = 'address, article, aside, blockquote, dd, details, div, dl, dt, fieldset, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, ol, p, pre, section, summary, table, td, th, tr, ul';
+
+    /**
+     * HTML's collapsible whitespace; a no-break space is not.
+     */
+    protected const WHITESPACE = " \t\n\r\f";
+
     protected HTMLDocument $doc;
 
     /**
@@ -92,6 +103,7 @@ class Converter
         $this->cleanImages($main);
         $this->cleanLinks($main);
         $this->removeEmptyListItems($main);
+        $this->trimLineStarts($main);
 
         return $this->doc->saveHtml($main);
     }
@@ -302,6 +314,49 @@ class Converter
         foreach ($main->querySelectorAll('ul, ol') as $list) {
             if (! $list->firstElementChild) {
                 $list->remove();
+            }
+        }
+    }
+
+    /**
+     * A browser renders no whitespace where a line starts: the template's
+     * indentation before a card's price, or after a `<br>`, is not on the
+     * page. The converter collapses it to a space but keeps it, which indents
+     * the line in the markdown.
+     */
+    protected function trimLineStarts(Element $main): void
+    {
+        foreach ($main->querySelectorAll(self::BLOCKS.', br') as $element) {
+            if ($element->closest('pre')) {
+                continue;
+            }
+            if ($element->localName !== 'br') {
+                $this->trimLeading($element->firstChild);
+            }
+            $this->trimLeading($element->nextSibling);
+        }
+    }
+
+    /**
+     * Strips whitespace from `$node` on, into inline elements, up to the
+     * first text or image that renders.
+     */
+    protected function trimLeading(?Node $node): void
+    {
+        for (; $node; $node = $node->nextSibling) {
+            if ($node instanceof Text) {
+                $node->data = ltrim($node->data, self::WHITESPACE);
+                if ($node->data !== '') {
+                    return;
+                }
+            } elseif ($node instanceof Element) {
+                if ($node->matches(self::BLOCKS.', br, img')) {
+                    return;
+                }
+                $this->trimLeading($node->firstChild);
+                if (trim($node->textContent, self::WHITESPACE) !== '' || $node->querySelector('img')) {
+                    return;
+                }
             }
         }
     }
