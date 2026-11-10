@@ -1,4 +1,5 @@
 {
     "core": null,
+    "phpVersion": "8.4",
     "plugins": ["."]
 }

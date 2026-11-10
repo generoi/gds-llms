@@ -311,6 +311,25 @@ class LlmsTxtTest extends WP_UnitTestCase
     }
 
     /**
+     * WordPress strips a generated excerpt's tags without a space between
+     * them: table cells and <br> lines would run together.
+     */
+    public function test_a_generated_description_keeps_words_apart(): void
+    {
+        $page = self::factory()->post->create([
+            'post_type' => 'page',
+            'post_title' => 'Contact',
+            'post_excerpt' => '',
+            'post_content' => '<p>Holmasto<br>Aleksanterinkatu 50</p><table><tr><td>Au</td><td>gold</td></tr></table>',
+        ]);
+        $menu = wp_create_nav_menu('Main');
+        $this->menuItem($menu, ['menu-item-object-id' => $page, 'menu-item-object' => 'page', 'menu-item-type' => 'post_type']);
+        set_theme_mod('nav_menu_locations', ['primary_navigation' => $menu]);
+
+        $this->assertStringContainsString('): Holmasto Aleksanterinkatu 50 Au gold', (new Document)->build(''));
+    }
+
+    /**
      * The intro already links every language's llms.txt; Polylang's switcher
      * (here as its dropdown) would list the languages again as a section.
      */
@@ -378,6 +397,35 @@ class LlmsTxtTest extends WP_UnitTestCase
 
         $this->assertStringContainsString("## Catalogue\n- [Pumps](", $body);
         $this->assertStringNotContainsString('Hand pumps', $body);
+    }
+
+    /**
+     * Polylang gives each language its own "Uncategorized"; the option names
+     * only one of them.
+     */
+    public function test_catalogue_skips_the_default_category_in_every_language(): void
+    {
+        require_once dirname(__DIR__).'/stubs/polylang-term-translations.php';
+        $registered = taxonomy_exists('product_cat');
+        if (! $registered) {
+            register_taxonomy('product_cat', 'post', ['public' => true, 'label' => 'Product categories']);
+        }
+        $default = self::factory()->term->create(['taxonomy' => 'product_cat', 'name' => 'Luokittelematon']);
+        $translation = self::factory()->term->create(['taxonomy' => 'product_cat', 'name' => 'Uncategorized']);
+        $watches = self::factory()->term->create(['taxonomy' => 'product_cat', 'name' => 'Watches']);
+        wp_set_object_terms(self::factory()->post->create(), [$default, $translation, $watches], 'product_cat');
+        update_option('default_product_cat', $default);
+        $GLOBALS['pll_term_translations'] = [$default => ['fi' => $default, 'en' => $translation]];
+
+        $body = (new Document)->build('');
+        unset($GLOBALS['pll_term_translations']);
+        if (! $registered) {
+            unregister_taxonomy('product_cat');
+        }
+
+        $this->assertStringContainsString('[Watches](', $body);
+        $this->assertStringNotContainsString('Luokittelematon', $body);
+        $this->assertStringNotContainsString('Uncategorized', $body);
     }
 
     /**

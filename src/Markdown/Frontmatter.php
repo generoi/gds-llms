@@ -2,6 +2,7 @@
 
 namespace GeneroWP\Llms\Markdown;
 
+use Dom\HTMLDocument;
 use GeneroWP\Llms\Format;
 
 /**
@@ -14,7 +15,7 @@ class Frontmatter
     /**
      * @param  string  $base  absolute URL of the page, the `url` without a canonical link
      */
-    public function __construct(protected Dom $dom, protected string $base) {}
+    public function __construct(protected HTMLDocument $doc, protected string $base) {}
 
     /**
      * YAML frontmatter from the page's metadata, only for the fields it has.
@@ -26,11 +27,11 @@ class Frontmatter
     {
         $offer = $this->offer();
         $fields = [
-            'title' => $this->meta('og:title') ?: Format::text($this->dom->first('//title')?->textContent),
+            'title' => $this->meta('og:title') ?: Format::text($this->doc->querySelector('title')?->textContent),
             'description' => $this->meta('description') ?: $this->meta('og:description'),
             'image' => $this->meta('og:image'),
-            'url' => $this->dom->first('//link[@rel="canonical"]')?->getAttribute('href') ?: $this->base,
-            'language' => $language = Format::text($this->dom->first('//html')?->getAttribute('lang')),
+            'url' => $this->doc->querySelector('link[rel="canonical"]')?->getAttribute('href') ?: $this->base,
+            'language' => $language = Format::text($this->doc->documentElement?->getAttribute('lang')),
             'translations' => $this->translations($language),
             'modified' => $this->meta('article:modified_time'),
             // Open Graph's product tags, else the page's schema.org Offer.
@@ -56,7 +57,7 @@ class Frontmatter
     public function jsonLd(): array
     {
         $blocks = [];
-        foreach ($this->dom->query('//script[@type="application/ld+json"]') as $script) {
+        foreach ($this->doc->querySelectorAll('script[type="application/ld+json"]') as $script) {
             $data = json_decode(trim($script->textContent), true);
             if ($data !== null) {
                 $blocks[] = (string) wp_json_encode($data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
@@ -78,9 +79,9 @@ class Frontmatter
     {
         $translations = [];
 
-        foreach ($this->dom->query('//link[@rel="alternate"][@hreflang]') as $link) {
-            $hreflang = $link->getAttribute('hreflang');
-            $url = Endpoint::url($link->getAttribute('href'));
+        foreach ($this->doc->querySelectorAll('link[rel="alternate"][hreflang]') as $link) {
+            $hreflang = (string) $link->getAttribute('hreflang');
+            $url = Endpoint::url((string) $link->getAttribute('href'));
 
             if ($hreflang !== 'x-default' && strcasecmp($hreflang, $language) !== 0 && $url !== '') {
                 $translations[$hreflang] = $url;
@@ -95,9 +96,13 @@ class Frontmatter
      */
     protected function meta(string $name): string
     {
-        $meta = $this->dom->first(sprintf('//meta[@name=%1$s or @property=%1$s]', $this->dom->literal($name)));
+        foreach ($this->doc->querySelectorAll('meta[content]') as $meta) {
+            if ($meta->getAttribute('name') === $name || $meta->getAttribute('property') === $name) {
+                return Format::text($meta->getAttribute('content'));
+            }
+        }
 
-        return Format::text($meta?->getAttribute('content'));
+        return '';
     }
 
     /**
@@ -110,7 +115,7 @@ class Frontmatter
     {
         $offer = ['price' => '', 'priceCurrency' => '', 'availability' => '', 'sku' => ''];
 
-        foreach ($this->dom->query('//script[@type="application/ld+json"]') as $script) {
+        foreach ($this->doc->querySelectorAll('script[type="application/ld+json"]') as $script) {
             $data = json_decode(trim($script->textContent), true);
             $nodes = is_array($data) ? ($data['@graph'] ?? (array_is_list($data) ? $data : [$data])) : [];
 

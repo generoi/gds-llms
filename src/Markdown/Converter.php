@@ -2,10 +2,13 @@
 
 namespace GeneroWP\Llms\Markdown;
 
-use DOMDocument;
-use DOMElement;
-use DOMNode;
+use Dom\Element;
+use Dom\HTMLDocument;
+use Dom\Node;
 use GeneroWP\Llms\Format;
+use GeneroWP\Llms\Markdown\Converters\DivConverter;
+use GeneroWP\Llms\Markdown\Converters\EmphasisConverter;
+use GeneroWP\Llms\Markdown\Converters\LinkConverter;
 use League\HTMLToMarkdown\Converter\TableConverter;
 use League\HTMLToMarkdown\HtmlConverter;
 use WP_Http;
@@ -19,12 +22,13 @@ use WP_Http;
  * decorative, an accordion toggle names the panel it controls, a tab names its
  * panel. A block whose markdown comes out wrong is usually failing screen
  * readers the same way, and the fix belongs in the block.
+ *
+ * Markup of particular plugins is handled by their integrations, on the
+ * `gds/llms/markdown_dom` action, before these rules run.
  */
 class Converter
 {
-    protected Dom $dom;
-
-    protected DOMDocument $doc;
+    protected HTMLDocument $doc;
 
     /**
      * @param  string  $base  absolute URL of the page, which relative links resolve against
@@ -38,23 +42,22 @@ class Converter
      */
     public function page(string $html): string
     {
-        $this->dom = new Dom($html);
-        $this->doc = $this->dom->doc;
+        $this->doc = Html::parse($html);
 
-        $main = $this->dom->first('//main') ?? $this->dom->first('//*[@role="main"]') ?? $this->dom->first('//body');
+        $main = $this->doc->querySelector('main') ?? $this->doc->querySelector('[role="main"]') ?? $this->doc->body;
 
         if (! $main) {
             return '';
         }
 
         // Read before clean() drops every script.
-        $frontmatter = new Frontmatter($this->dom, $this->base);
+        $frontmatter = new Frontmatter($this->doc, $this->base);
         $yaml = $frontmatter->yaml();
         $jsonLd = $frontmatter->jsonLd();
 
         $markdown = $this->toMarkdown($this->clean($main));
 
-        if (! preg_match('/^# /m', $markdown) && ($title = $this->dom->first('//title'))) {
+        if (! preg_match('/^# /m', $markdown) && ($title = $this->doc->querySelector('title'))) {
             $markdown = trim('# '.Format::text($title->textContent)."\n\n".$markdown);
         }
 
@@ -67,25 +70,30 @@ class Converter
         return ($yaml ? $yaml."\n" : '').($markdown === '' ? '' : $markdown."\n");
     }
 
-    protected function clean(DOMElement $root): string
+    protected function clean(Element $main): string
     {
-        $this->dom->remove('.//script|.//style|.//noscript|.//template|.//svg|.//canvas|.//nav|.//*[@aria-hidden="true"]|.//form[@role="search"]', $root);
-        $this->labelTabPanels($root);
-        $this->replaceDisclosureButtons($root);
-        $this->dom->remove('.//button', $root);
-        $this->describeForms($root);
-        $this->dom->remove('.//input|.//select|.//textarea', $root);
-        $this->replaceIframes($root);
-        $this->cleanImages($root);
-        $this->cleanLinks($root);
-        $this->removeEmptyListItems($root);
+        /**
+         * The page's main content before conversion, for an integration or a
+         * site to adjust markup a screen reader rule cannot see through:
+         * remove what is hidden by CSS alone, turn a custom element into the
+         * element it stands for.
+         *
+         * @param  Element  $main
+         */
+        do_action('gds/llms/markdown_dom', $main);
 
-        $html = '';
-        foreach ($root->childNodes as $child) {
-            $html .= $this->doc->saveHTML($child);
-        }
+        Html::remove($main, 'script, style, noscript, template, svg, canvas, nav, [aria-hidden="true"], form[role="search"]');
+        $this->labelTabPanels($main);
+        $this->replaceDisclosureButtons($main);
+        Html::remove($main, 'button');
+        $this->describeForms($main);
+        Html::remove($main, 'input, select, textarea');
+        $this->replaceIframes($main);
+        $this->cleanImages($main);
+        $this->cleanLinks($main);
+        $this->removeEmptyListItems($main);
 
-        return $html;
+        return $this->doc->saveHtml($main);
     }
 
     protected function toMarkdown(string $html): string
@@ -93,19 +101,28 @@ class Converter
         $converter = new HtmlConverter([
             'header_style' => 'atx',
             'hard_break' => true,
-            // Layout wrappers (div, figure, section) dissolve into their text.
+            // Layout wrappers (figure, section) dissolve into their text.
             'strip_tags' => true,
             'strip_placeholder_links' => true,
         ]);
-        $converter->getEnvironment()->addConverter(new TableConverter);
+        $environment = $converter->getEnvironment();
+        $environment->addConverter(new TableConverter);
+        $environment->addConverter(new DivConverter);
+        $environment->addConverter(new LinkConverter);
+        $environment->addConverter(new EmphasisConverter);
 
-        // Wrapped, because the converter throws on a fragment that is only a
-        // comment and leaks its own XML prologue for one that is only a script.
-        $markdown = $converter->convert('<div>'.$html.'</div>');
+        // The converter throws on a fragment that is only a comment and leaks
+        // its own XML prologue for one that is only a script; the <main> or
+        // <body> serialized above wraps it.
+        $markdown = $converter->convert($html);
         // The converter leaves entities encoded, so `&amp;` would reach the reader verbatim.
         $markdown = html_entity_decode($markdown, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-        // Spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing but whitespace.
-        $markdown = Format::replace('/^[\h\x{00A0}]+$/mu', '', $markdown);
+        // Trailing whitespace means nothing here (hard breaks are newlines):
+        // spacer paragraphs (`<p>&nbsp;</p>`) leave lines of nothing else, and
+        // template whitespace moved out of a link can end a line.
+        $markdown = Format::replace('/[\h\x{00A0}]+$/mu', '', $markdown);
+        // A heading's template whitespace (`<h3> <a>Title</a></h3>`) widens the gap after the `#`s.
+        $markdown = Format::replace('/^(#{1,6})\h{2,}/mu', '$1 ', $markdown);
 
         return trim(Format::replace("/\n{3,}/", "\n\n", $markdown));
     }
@@ -114,18 +131,17 @@ class Converter
      * A tab panel is announced by its tab's name; the tab list itself is only
      * controls once every panel carries its name.
      */
-    protected function labelTabPanels(DOMElement $root): void
+    protected function labelTabPanels(Element $main): void
     {
-        foreach ($this->dom->query('.//*[@role="tabpanel"][@aria-labelledby]', $root) as $panel) {
-            $tab = $this->dom->byId($panel->getAttribute('aria-labelledby'));
-            $label = $tab ? Format::text($tab->textContent) : '';
+        foreach ($main->querySelectorAll('[role="tabpanel"][aria-labelledby]') as $panel) {
+            $label = Format::text(Html::referenced($this->doc, $panel->getAttribute('aria-labelledby'))?->textContent);
 
             if ($label !== '') {
-                $panel->insertBefore($this->paragraph($this->strong($label)), $panel->firstChild);
+                $panel->prepend($this->paragraph($this->strong($label)));
             }
         }
 
-        $this->dom->remove('.//*[@role="tablist"]', $root);
+        Html::remove($main, '[role="tablist"]');
     }
 
     /**
@@ -133,18 +149,17 @@ class Converter
      * controls a panel with text; any other button is an action, which
      * markdown has no use for.
      */
-    protected function replaceDisclosureButtons(DOMElement $root): void
+    protected function replaceDisclosureButtons(Element $main): void
     {
-        foreach ($this->dom->query('.//button[@aria-controls]', $root) as $button) {
-            $panel = $this->dom->byId($button->getAttribute('aria-controls'));
+        foreach ($main->querySelectorAll('button[aria-controls]') as $button) {
+            $panel = Html::referenced($this->doc, $button->getAttribute('aria-controls'));
             $label = Format::text($button->textContent);
 
             if ($label === '' || ! $panel || Format::text($panel->textContent) === '') {
                 continue;
             }
 
-            $inHeading = (bool) $this->dom->first('ancestor::*[self::h1 or self::h2 or self::h3 or self::h4 or self::h5 or self::h6]', $button);
-            $button->parentNode?->replaceChild($inHeading ? $this->doc->createTextNode($label) : $this->paragraph($this->strong($label)), $button);
+            $button->replaceWith($button->closest('h1, h2, h3, h4, h5, h6') ? $label : $this->paragraph($this->strong($label)));
         }
     }
 
@@ -152,17 +167,14 @@ class Converter
      * A form cannot be filled in from markdown, but a reader should know it is
      * there and what it asks for.
      */
-    protected function describeForms(DOMElement $root): void
+    protected function describeForms(Element $main): void
     {
-        foreach ($this->dom->query('.//form', $root) as $form) {
+        foreach ($main->querySelectorAll('form') as $form) {
             $name = Format::text($form->getAttribute('aria-label'))
-                ?: Format::text($this->dom->byId($form->getAttribute('aria-labelledby'))?->textContent);
+                ?: Format::text(Html::referenced($this->doc, (string) $form->getAttribute('aria-labelledby'))?->textContent);
 
-            // Gravity Forms hides its honeypot, and fields set to "Hidden"
-            // visibility, from people by CSS alone.
-            $labels = $this->dom->query('.//label[not(ancestor::*[contains(concat(" ", @class, " "), " gform_validation_container ") or contains(concat(" ", @class, " "), " gfield_visibility_hidden ")])]|.//legend', $form);
             $fields = [];
-            foreach ($labels as $label) {
+            foreach ($form->querySelectorAll('label, legend') as $label) {
                 $text = Format::text($label->textContent);
                 if ($text !== '' && ! in_array($text, $fields, true)) {
                     $fields[] = $text;
@@ -174,49 +186,45 @@ class Converter
             // One sentence for translators, with the link wherever their language puts it.
             /* translators: %s: a link reading "the web page" */
             [$before, $after] = explode('%s', __('(fill it in on %s)', 'gds-llms'), 2) + ['', ''];
-            $note->appendChild($this->doc->createTextNode(' '.$before));
             $link = $this->doc->createElement('a');
-            $link->appendChild($this->doc->createTextNode(__('the web page', 'gds-llms')));
             $link->setAttribute('href', $this->base);
-            $note->appendChild($link);
-            $note->appendChild($this->doc->createTextNode($after.($fields ? '. '.__('Fields:', 'gds-llms') : '')));
+            $link->append(__('the web page', 'gds-llms'));
+            $note->append(' '.$before, $link, $after.($fields ? '. '.__('Fields:', 'gds-llms') : ''));
 
-            $replacement = $this->doc->createDocumentFragment();
-            $replacement->appendChild($note);
-
+            $list = null;
             if ($fields) {
                 $list = $this->doc->createElement('ul');
                 foreach ($fields as $field) {
-                    $list->appendChild($this->doc->createElement('li'))->appendChild($this->doc->createTextNode($field));
+                    $item = $this->doc->createElement('li');
+                    $item->append($field);
+                    $list->append($item);
                 }
-                $replacement->appendChild($list);
             }
 
-            $form->parentNode?->replaceChild($replacement, $form);
+            $form->replaceWith(...array_filter([$note, $list]));
         }
     }
 
     /**
      * An embed's content is out of reach, but its title and address are not.
-     * genero-cmp holds third-party iframes back until consent as
-     * `<gds-cmp-embed as="iframe">`, with the iframe's attributes.
      */
-    protected function replaceIframes(DOMElement $root): void
+    protected function replaceIframes(Element $main): void
     {
-        foreach ($this->dom->query('.//iframe|.//gds-cmp-embed[@as="iframe"]', $root) as $iframe) {
+        foreach ($main->querySelectorAll('iframe') as $iframe) {
             $src = $iframe->getAttribute('src') ?: $iframe->getAttribute('data-src');
-            $replacement = null;
 
-            if ($src !== '' && ! str_starts_with($src, 'about:')) {
-                $title = Format::text($iframe->getAttribute('title'));
-                $link = $this->doc->createElement('a');
-                $link->setAttribute('href', $this->absolute($src));
-                /* translators: %s: title of an embedded map, video or app */
-                $link->appendChild($this->doc->createTextNode($title ? sprintf(__('Embedded: %s', 'gds-llms'), $title) : __('Embedded content', 'gds-llms')));
-                $replacement = $this->paragraph($link);
+            if (! $src || str_starts_with($src, 'about:')) {
+                $iframe->remove();
+
+                continue;
             }
 
-            $replacement ? $iframe->parentNode?->replaceChild($replacement, $iframe) : $iframe->parentNode?->removeChild($iframe);
+            $title = Format::text($iframe->getAttribute('title'));
+            $link = $this->doc->createElement('a');
+            $link->setAttribute('href', $this->absolute($src));
+            /* translators: %s: title of an embedded map, video or app */
+            $link->append($title ? sprintf(__('Embedded: %s', 'gds-llms'), $title) : __('Embedded content', 'gds-llms'));
+            $iframe->replaceWith($this->paragraph($link));
         }
     }
 
@@ -224,16 +232,16 @@ class Converter
      * `alt=""` marks an image decorative; one without alt has no name to
      * announce either. Lazy loaders keep the real address in `data-src`.
      */
-    protected function cleanImages(DOMElement $root): void
+    protected function cleanImages(Element $main): void
     {
-        foreach ($this->dom->query('.//img', $root) as $img) {
-            $src = $img->getAttribute('src');
+        foreach ($main->querySelectorAll('img') as $img) {
+            $src = (string) $img->getAttribute('src');
             if ($src === '' || str_starts_with($src, 'data:')) {
-                $src = $img->getAttribute('data-src');
+                $src = (string) $img->getAttribute('data-src');
             }
 
             if (Format::text($img->getAttribute('alt')) === '' || $src === '') {
-                $img->parentNode?->removeChild($img);
+                $img->remove();
 
                 continue;
             }
@@ -242,41 +250,38 @@ class Converter
         }
     }
 
-    protected function cleanLinks(DOMElement $root): void
+    protected function cleanLinks(Element $main): void
     {
-        foreach ($this->dom->query('.//a[@href]', $root) as $link) {
-            $href = trim($link->getAttribute('href'));
+        foreach ($main->querySelectorAll('a[href]') as $link) {
+            $href = trim((string) $link->getAttribute('href'));
 
             // In-page anchors and `#` placeholders lead nowhere outside the page.
             if ($href === '' || str_starts_with($href, '#') || str_starts_with($href, 'javascript:')) {
-                $this->unwrap($link);
+                Html::unwrap($link);
 
                 continue;
             }
 
             $link->setAttribute('href', $this->absolute($href));
-            $this->trimEdges($link);
 
-            if (Format::text($link->textContent) === '' && ! $this->dom->first('.//img', $link)) {
+            if (Format::text($link->textContent) === '' && ! $link->querySelector('img')) {
                 $label = Format::text($link->getAttribute('aria-label'));
-                $label === '' ? $link->parentNode?->removeChild($link) : $link->appendChild($this->doc->createTextNode($label));
+                $label === '' ? $link->remove() : $link->append($label);
 
                 continue;
             }
 
             // A heading inside a link renders as `[ ## Title ](url)`: link the
             // heading's text instead.
-            $headings = $this->dom->query('.//h1|.//h2|.//h3|.//h4|.//h5|.//h6', $link);
+            $headings = $link->querySelectorAll('h1, h2, h3, h4, h5, h6');
             foreach ($headings as $heading) {
                 $inner = $this->doc->createElement('a');
-                $inner->setAttribute('href', $link->getAttribute('href'));
-                while ($heading->firstChild) {
-                    $inner->appendChild($heading->firstChild);
-                }
-                $heading->appendChild($inner);
+                $inner->setAttribute('href', (string) $link->getAttribute('href'));
+                $inner->append(...iterator_to_array($heading->childNodes));
+                $heading->append($inner);
             }
-            if ($headings) {
-                $this->unwrap($link);
+            if ($headings->length) {
+                Html::unwrap($link);
             }
         }
     }
@@ -286,34 +291,18 @@ class Converter
      * fills in (FacetWP's facets), or one that only held a control removed
      * above -- reads as a bare bullet; a list of nothing but those, as nothing.
      */
-    protected function removeEmptyListItems(DOMElement $root): void
+    protected function removeEmptyListItems(Element $main): void
     {
-        foreach ($this->dom->query('.//li', $root) as $item) {
-            if (Format::text($item->textContent) === '' && ! $this->dom->first('.//img', $item)) {
-                $item->parentNode?->removeChild($item);
+        foreach ($main->querySelectorAll('li') as $item) {
+            if (Format::text($item->textContent) === '' && ! $item->querySelector('img')) {
+                $item->remove();
             }
         }
 
-        $this->dom->remove('.//ul[not(li)]|.//ol[not(li)]', $root);
-    }
-
-    /**
-     * Template whitespace inside a link (`<a> Read </a>` from an indented
-     * template) comes out as `[ Read ](url)`; moved outside, it still
-     * separates the link from the text around it.
-     */
-    protected function trimEdges(DOMElement $element): void
-    {
-        $first = $element->firstChild;
-        if ($first instanceof \DOMText && ($text = Format::replace('/^\s+/u', '', $first->data)) !== $first->data) {
-            $first->data = $text;
-            $element->parentNode?->insertBefore($this->doc->createTextNode(' '), $element);
-        }
-
-        $last = $element->lastChild;
-        if ($last instanceof \DOMText && ($text = Format::replace('/\s+$/u', '', $last->data)) !== $last->data) {
-            $last->data = $text;
-            $element->parentNode?->insertBefore($this->doc->createTextNode(' '), $element->nextSibling);
+        foreach ($main->querySelectorAll('ul, ol') as $list) {
+            if (! $list->firstElementChild) {
+                $list->remove();
+            }
         }
     }
 
@@ -322,32 +311,19 @@ class Converter
         return WP_Http::make_absolute_url($url, $this->base);
     }
 
-    protected function strong(string $text): DOMElement
+    protected function strong(string $text): Element
     {
         $strong = $this->doc->createElement('strong');
-        $strong->appendChild($this->doc->createTextNode($text));
+        $strong->append($text);
 
         return $strong;
     }
 
-    protected function paragraph(DOMNode $child): DOMElement
+    protected function paragraph(Node|string $child): Element
     {
         $p = $this->doc->createElement('p');
-        $p->appendChild($child);
+        $p->append($child);
 
         return $p;
-    }
-
-    protected function unwrap(DOMNode $node): void
-    {
-        $parent = $node->parentNode;
-        if (! $parent) {
-            return;
-        }
-
-        while ($node->firstChild) {
-            $parent->insertBefore($node->firstChild, $node);
-        }
-        $parent->removeChild($node);
     }
 }

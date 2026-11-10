@@ -34,6 +34,10 @@ class Plugin
 
         add_action('init', [$this, 'loadTextdomain'], 0);
 
+        Integrations\GravityForms::register();
+        Integrations\WooCommerce::register();
+        Integrations\GeneroCmp::register();
+
         (new LlmsTxt\Endpoint)->register();
         (new Markdown\Endpoint)->register();
         (new Robots)->register();
