@@ -13,11 +13,35 @@ class WooCommerce
     {
         add_action('gds/llms/markdown_dom', [self::class, 'clean']);
         add_filter('gds/llms/markdown_content', [self::class, 'productDetails'], 10, 2);
+        add_filter('gds/llms/markdown_content', [self::class, 'addToCart'], 10, 2);
     }
 
     /**
-     * The add-to-cart link is an action like a button: following
-     * `?add-to-cart=` puts the product in a cart.
+     * A product page's link that puts the product in the cart, for a product
+     * that can go straight in: in stock, and with no options to choose first.
+     * Built on the permalink, as add_to_cart_url() would build it on the
+     * markdown URL being served.
+     */
+    public static function addToCart(string $content, WP_Post $post): string
+    {
+        if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post))) {
+            return $content;
+        }
+
+        if (! $product->is_purchasable() || ! $product->is_in_stock() || ! $product->supports('ajax_add_to_cart')) {
+            return $content;
+        }
+
+        return $content.sprintf(
+            '<p><a href="%s">%s</a></p>',
+            esc_url(add_query_arg('add-to-cart', $product->get_id(), $product->get_permalink())),
+            esc_html($product->single_add_to_cart_text()),
+        );
+    }
+
+    /**
+     * A listing's add-to-cart buttons, one per product; the product's own
+     * page has the link instead.
      */
     public static function clean(Element $main): void
     {
