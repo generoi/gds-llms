@@ -2,11 +2,22 @@
 
 namespace GeneroWP\Llms\Integrations;
 
+use Dom\Element;
 use GeneroWP\Llms\Format;
+use GeneroWP\Llms\Markdown\Html;
 use WP_Post;
 
 class WooCommerce
 {
+    /**
+     * The add-to-cart link is an action like a button: following
+     * `?add-to-cart=` puts the product in a cart.
+     */
+    public static function clean(Element $main): void
+    {
+        Html::remove($main, 'a.add_to_cart_button');
+    }
+
     /**
      * What a visitor can do with a product, and on what terms -- the part an
      * assistant needs and cannot infer from a list of links.
@@ -51,6 +62,29 @@ class WooCommerce
         }
 
         return Format::text(wc_price(wc_get_price_to_display($product)));
+    }
+
+    /**
+     * A product's visible attributes ("Material: Bronze"), which WooCommerce
+     * shows in the product page's Additional information tab rather than in
+     * the post content. '' for anything else, and for a product without any.
+     */
+    public static function productDetails(WP_Post $post): string
+    {
+        if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post))) {
+            return '';
+        }
+
+        $items = '';
+        foreach ($product->get_attributes() as $attribute) {
+            $value = $attribute->get_visible() ? $product->get_attribute($attribute->get_name()) : '';
+
+            if ($value !== '') {
+                $items .= sprintf('<li><strong>%s:</strong> %s</li>', esc_html(wc_attribute_label($attribute->get_name(), $product)), esc_html($value));
+            }
+        }
+
+        return $items ? sprintf('<h2>%s</h2><ul>%s</ul>', esc_html__('Additional information', 'woocommerce'), $items) : '';
     }
 
     /**

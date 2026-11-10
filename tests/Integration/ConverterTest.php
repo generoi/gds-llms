@@ -227,6 +227,44 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('Send', $markdown);
     }
 
+    /**
+     * WooCommerce's product grid: the card link wraps the image and title in
+     * <div>s, and the price is a <div> after it.
+     */
+    public function test_a_card_link_stays_one_link_and_its_price_apart(): void
+    {
+        $markdown = $this->convert(
+            '<ul><li><a href="/product/ring/"> <div><img src="/ring.jpg" alt="Gold ring"></div> <div>Ring</div> </a> <div class="price">120 €</div></li></ul>'
+        );
+
+        $this->assertStringContainsString("- [![Gold ring](https://example.com/ring.jpg) Ring](https://example.com/product/ring/)\n\n    120 €", $markdown);
+    }
+
+    public function test_divs_of_text_stay_apart_except_in_table_cells(): void
+    {
+        $markdown = $this->convert('<div><div>Opening hours</div><div>Mon 10–17</div></div><table><tr><th>Day</th></tr><tr><td><div>Mon</div></td></tr></table>');
+
+        $this->assertStringContainsString("Opening hours\n\nMon 10–17", $markdown);
+        $this->assertStringContainsString('| Mon |', $markdown);
+    }
+
+    public function test_bold_inside_bold_is_one_bold(): void
+    {
+        $this->assertStringContainsString('**What is 925 silver?**', $this->convert('<p><strong class="schema-faq-question">What is <strong>925</strong> silver?</strong></p>'));
+    }
+
+    public function test_add_to_cart_links_are_dropped(): void
+    {
+        $markdown = $this->convert(
+            '<li><a href="/product/ring/">Ring</a> 120 €'
+            .'<a href="/shop/?add-to-cart=12" rel="nofollow" class="wp-block-button__link add_to_cart_button ajax_add_to_cart">Add to cart</a></li>'
+        );
+
+        $this->assertStringContainsString('[Ring](https://example.com/product/ring/)', $markdown);
+        $this->assertStringNotContainsString('add-to-cart', $markdown);
+        $this->assertStringNotContainsString('Add to cart', $markdown);
+    }
+
     public function test_search_forms_are_dropped(): void
     {
         $this->assertStringNotContainsString('Form', $this->convert('<p>Body</p><form role="search"><label>Search</label><input></form>'));
@@ -278,6 +316,7 @@ class ConverterTest extends WP_UnitTestCase
         $markdown = $this->convert("<p>Brochure<a href=\"/brochure.pdf\">\n   Download\n </a>today</p>");
 
         $this->assertStringContainsString('Brochure [Download](https://example.com/brochure.pdf) today', $markdown);
+        $this->assertStringContainsString("\n### [Ring](https://example.com/ring/)\n", $this->convert("<h3>\n  <a href=\"/ring/\"> Ring </a>\n</h3>"));
     }
 
     public function test_a_heading_inside_a_link_links_the_heading_text(): void

@@ -11,7 +11,7 @@
         }
     ],
     "require": {
-        "php": ">=8.2",
+        "php": ">=8.4",
         "ext-mbstring": "*",
         "league/html-to-markdown": "^5.1"
     },

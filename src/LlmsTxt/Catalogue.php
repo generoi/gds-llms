@@ -131,7 +131,7 @@ class Catalogue
             'order' => 'ASC',
             'number' => self::MAX_LISTED,
             // WooCommerce's catch-all "Uncategorized" says nothing about the catalogue.
-            'exclude' => $taxonomy === 'product_cat' ? [(int) get_option('default_product_cat')] : [],
+            'exclude' => $taxonomy === 'product_cat' ? $this->defaultCategories() : [],
         ];
 
         if ($language && Polylang::isActive()) {
@@ -145,6 +145,23 @@ class Catalogue
         }
 
         return $terms;
+    }
+
+    /**
+     * WooCommerce's default product category, in every language: Polylang
+     * gives each language its own term, and the option holds only one.
+     *
+     * @return int[]
+     */
+    protected function defaultCategories(): array
+    {
+        $default = (int) get_option('default_product_cat');
+
+        if (! $default || ! function_exists('pll_get_term_translations')) {
+            return [$default];
+        }
+
+        return array_values(array_unique([$default, ...array_map('intval', pll_get_term_translations($default))]));
     }
 
     protected function termLink(WP_Term $term): string

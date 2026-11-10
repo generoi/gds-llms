@@ -3,7 +3,7 @@
 namespace GeneroWP\Llms\Integrations;
 
 use GeneroWP\Llms\Format;
-use GeneroWP\Llms\Markdown\Dom;
+use GeneroWP\Llms\Markdown\Html;
 
 /**
  * FacetWP prints each facet as an empty placeholder and fills it with
@@ -83,13 +83,12 @@ class FacetWP
      */
     protected static function choices(string $name, string $facetHtml, string $base): array
     {
-        $dom = new Dom('<html><body>'.$facetHtml.'</body></html>');
         $vars = FWP()->request->url_vars;
         unset($vars['paged']);
         $links = [];
 
-        foreach ($dom->query('//option[@value!=""]|//*[@data-value!=""]') as $choice) {
-            $value = $choice->getAttribute('value') ?: $choice->getAttribute('data-value');
+        foreach (Html::parse($facetHtml)->querySelectorAll('option[value]:not([value=""]), [data-value]:not([data-value=""])') as $choice) {
+            $value = (string) ($choice->getAttribute('value') ?: $choice->getAttribute('data-value'));
             // A checkbox's label and count are separate spans, run together in textContent.
             $parts = [];
             foreach ($choice->childNodes as $child) {
