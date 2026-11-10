@@ -42,7 +42,6 @@ class ContentSource implements Source
     {
         setup_postdata($this->post);
         $content = (string) apply_filters('the_content', get_the_content(null, false, $this->post));
-        $content .= WooCommerce::productDetails($this->post);
 
         /**
          * The HTML converted in `content` mode, for adding what the site's

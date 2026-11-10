@@ -6,6 +6,11 @@ use Dom\Element;
 
 class GeneroCmp
 {
+    public static function register(): void
+    {
+        add_action('gds/llms/markdown_dom', [self::class, 'clean']);
+    }
+
     /**
      * genero-cmp holds third-party iframes back until consent as
      * `<gds-cmp-embed as="iframe">` with the iframe's attributes; as the

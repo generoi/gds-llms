@@ -34,10 +34,9 @@ class Plugin
 
         add_action('init', [$this, 'loadTextdomain'], 0);
 
-        // Each only matches its own plugin's markup.
-        add_action('gds/llms/markdown_dom', [Integrations\GravityForms::class, 'clean']);
-        add_action('gds/llms/markdown_dom', [Integrations\WooCommerce::class, 'clean']);
-        add_action('gds/llms/markdown_dom', [Integrations\GeneroCmp::class, 'clean']);
+        Integrations\GravityForms::register();
+        Integrations\WooCommerce::register();
+        Integrations\GeneroCmp::register();
 
         (new LlmsTxt\Endpoint)->register();
         (new Markdown\Endpoint)->register();

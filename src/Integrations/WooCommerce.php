@@ -9,6 +9,12 @@ use WP_Post;
 
 class WooCommerce
 {
+    public static function register(): void
+    {
+        add_action('gds/llms/markdown_dom', [self::class, 'clean']);
+        add_filter('gds/llms/markdown_content', [self::class, 'productDetails'], 10, 2);
+    }
+
     /**
      * The add-to-cart link is an action like a button: following
      * `?add-to-cart=` puts the product in a cart.
@@ -67,12 +73,13 @@ class WooCommerce
     /**
      * A product's visible attributes ("Material: Bronze"), which WooCommerce
      * shows in the product page's Additional information tab rather than in
-     * the post content. '' for anything else, and for a product without any.
+     * the post content, appended to the content. Unhook it to drop or replace
+     * the list.
      */
-    public static function productDetails(WP_Post $post): string
+    public static function productDetails(string $content, WP_Post $post): string
     {
         if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post))) {
-            return '';
+            return $content;
         }
 
         $items = '';
@@ -84,7 +91,7 @@ class WooCommerce
             }
         }
 
-        return $items ? sprintf('<h2>%s</h2><ul>%s</ul>', esc_html__('Additional information', 'woocommerce'), $items) : '';
+        return $items ? $content.sprintf('<h2>%s</h2><ul>%s</ul>', esc_html__('Additional information', 'woocommerce'), $items) : $content;
     }
 
     /**
