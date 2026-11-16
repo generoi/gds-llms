@@ -196,6 +196,14 @@ class ConverterTest extends WP_UnitTestCase
         $this->assertStringNotContainsString('<svg', $markdown);
     }
 
+    public function test_a_table_nested_in_a_cell_keeps_each_line_break_once(): void
+    {
+        $markdown = $this->convert('<table><tr><td><table><tr><th>A<br>B<br></th><th><p>1</p><p>2</p></th></tr></table></td></tr></table>');
+
+        $this->assertStringContainsString('<br>', $markdown);
+        $this->assertStringNotContainsString('<br><br>', $markdown);
+    }
+
     /**
      * core/accordion: the question is the toggle button inside the heading.
      */
