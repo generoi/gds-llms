@@ -85,9 +85,37 @@ class CacheTags
 
         $cacheTags->save($url);
 
-        if ($cacheTags->httpHeader) {
-            header(sprintf('%s: %s', $cacheTags->httpHeader, implode(' ', $cacheTags->get())));
+        $tagList = $cacheTags->get();
+        if (! $tagList) {
+            return;
         }
+
+        foreach (self::headers($cacheTags->httpHeader) as $header => $separator) {
+            header(sprintf('%s: %s', $header, implode($separator, $tagList)));
+        }
+    }
+
+    /**
+     * The configured headers mapped to their separator, as sage-cachetags'
+     * HttpHeader action reads them: v3 takes a name, a list of names, or names
+     * mapped to separators (e.g. Cloudflare's Cache-Tag needs commas).
+     *
+     * @param  string|array<int|string, string>|null  $httpHeader
+     * @return array<string, string>
+     */
+    protected static function headers(string|array|null $httpHeader): array
+    {
+        $headers = [];
+        foreach ((array) $httpHeader as $name => $separator) {
+            if (is_int($name)) {
+                [$name, $separator] = [$separator, ' '];
+            }
+            if ($name) {
+                $headers[$name] = $separator;
+            }
+        }
+
+        return $headers;
     }
 
     /**
