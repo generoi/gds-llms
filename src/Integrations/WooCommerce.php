@@ -25,6 +25,10 @@ class WooCommerce
      */
     protected static function cartItems(\WC_Product $product): array
     {
+        if (! self::sells()) {
+            return [];
+        }
+
         $buyable = fn ($item) => $item instanceof \WC_Product && $item->is_purchasable() && $item->is_in_stock();
         $items = [];
 
@@ -86,7 +90,7 @@ class WooCommerce
      */
     public static function commerceSentence(): string
     {
-        if (! function_exists('WC')) {
+        if (! self::sells()) {
             return '';
         }
 
@@ -98,6 +102,28 @@ class WooCommerce
                 : __('Products can be bought online. Prices are in %s and exclude VAT.', 'gds-llms'),
             get_woocommerce_currency(),
         ).' '.__('A product\'s markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one.', 'gds-llms');
+    }
+
+    /**
+     * Whether the shop takes orders. WooCommerce also runs product catalogues,
+     * often with prices imported from an ERP, that have no cart or checkout
+     * to buy them through.
+     */
+    public static function sells(): bool
+    {
+        if (! function_exists('WC')) {
+            return false;
+        }
+
+        foreach (['cart', 'checkout'] as $page) {
+            $id = wc_get_page_id($page);
+
+            if ($id <= 0 || get_post_status($id) !== 'publish') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -127,15 +153,19 @@ class WooCommerce
     }
 
     /**
-     * A product's visible attributes ("Material: Bronze"), which WooCommerce
-     * shows in the product page's Additional information tab rather than in
-     * the post content, appended to the content. Unhook it to drop or replace
-     * the list.
+     * What WooCommerce shows on a product page outside the post content: the
+     * short description above it, and the visible attributes ("Material:
+     * Bronze") of the Additional information tab below it. Unhook it to drop
+     * or replace them.
      */
     public static function productDetails(string $content, WP_Post $post): string
     {
         if ($post->post_type !== 'product' || ! function_exists('wc_get_product') || ! ($product = wc_get_product($post))) {
             return $content;
+        }
+
+        if ($post->post_excerpt !== '') {
+            $content = apply_filters('woocommerce_short_description', $post->post_excerpt).$content;
         }
 
         $items = '';

@@ -130,6 +130,27 @@ class FacetWPTest extends WP_UnitTestCase
         $this->assertSame(8, $other->get('posts_per_page'), 'Only the listing FacetWP filters.');
     }
 
+    /**
+     * A hierarchical checkbox facet's children are nested under their parent,
+     * without the `[+]` toggle that opens them.
+     */
+    public function test_a_hierarchical_facet_keeps_its_nesting(): void
+    {
+        FWP()->helper->facets['industries'] = ['type' => 'checkboxes'];
+        FWP()->facet->output['facets']['industries'] = '<div class="facetwp-checkbox" data-value="food"><span class="facetwp-display-value">Food</span><span class="facetwp-counter">(20)</span><span class="facetwp-expand">[+]</span></div>'
+            .'<div class="facetwp-depth"><div class="facetwp-checkbox" data-value="dairy"><span class="facetwp-display-value">Dairy</span><span class="facetwp-counter">(5)</span></div></div>'
+            .'<div class="facetwp-checkbox" data-value="health"><span class="facetwp-display-value">Health</span><span class="facetwp-counter">(6)</span></div>';
+
+        $html = FacetWP::fill($this->page(), 'https://example.com/references/');
+
+        $this->assertStringContainsString(
+            '<ul><li><a href="https://example.com/references/?_industries=food">Food (20)</a>'
+            .'<ul><li><a href="https://example.com/references/?_industries=dairy">Dairy (5)</a></li></ul></li>'
+            .'<li><a href="https://example.com/references/?_industries=health">Health (6)</a></li></ul>',
+            $html,
+        );
+    }
+
     public function test_a_page_without_facets_is_untouched(): void
     {
         FWP()->display->active_facets = [];
