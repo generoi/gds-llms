@@ -119,6 +119,10 @@ class Converter
     protected function keepCellLineBreaks(Element $main): void
     {
         foreach ($main->querySelectorAll('td br, th br') as $br) {
+            // A selector list returns an element once per part it matches (a table in a cell is both).
+            if (! $br->parentNode) {
+                continue;
+            }
             $next = $br->nextSibling;
             while ($next instanceof Text && trim($next->data, self::WHITESPACE) === '') {
                 $next = $next->nextSibling;
@@ -128,8 +132,12 @@ class Converter
         }
 
         // Table plugins wrap each line of a cell in a block of its own (Tableberg: div > div > p).
+        $seen = [];
         foreach ($main->querySelectorAll('td p + p, th p + p, td div + div, th div + div') as $block) {
-            $block->before('<br>');
+            if (! isset($seen[spl_object_id($block)])) {
+                $seen[spl_object_id($block)] = true;
+                $block->before('<br>');
+            }
         }
     }
 

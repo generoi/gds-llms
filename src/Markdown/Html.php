@@ -20,7 +20,10 @@ class Html
     public static function remove(ParentNode $root, string $selector): void
     {
         foreach ($root->querySelectorAll($selector) as $element) {
-            $element->remove();
+            // A selector list returns an element once per part it matches; removing it again would throw.
+            if ($element->parentNode) {
+                $element->remove();
+            }
         }
     }
 

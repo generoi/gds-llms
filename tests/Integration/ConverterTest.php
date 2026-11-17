@@ -184,6 +184,27 @@ class ConverterTest extends WP_UnitTestCase
     }
 
     /**
+     * A selector list returns an element once per part it matches; `svg` and
+     * `[aria-hidden]` both match WordPress's social-link icons.
+     */
+    public function test_an_element_matching_two_parts_of_a_selector_list_is_removed_once(): void
+    {
+        $markdown = $this->convert('<p>Body</p><ul><li><a href="https://example.org/"><svg aria-hidden="true"><path d="M0 0"/></svg>Follow</a></li></ul>');
+
+        $this->assertStringContainsString('Body', $markdown);
+        $this->assertStringContainsString('Follow', $markdown);
+        $this->assertStringNotContainsString('<svg', $markdown);
+    }
+
+    public function test_a_table_nested_in_a_cell_keeps_each_line_break_once(): void
+    {
+        $markdown = $this->convert('<table><tr><td><table><tr><th>A<br>B<br></th><th><p>1</p><p>2</p></th></tr></table></td></tr></table>');
+
+        $this->assertStringContainsString('<br>', $markdown);
+        $this->assertStringNotContainsString('<br><br>', $markdown);
+    }
+
+    /**
      * core/accordion: the question is the toggle button inside the heading.
      */
     public function test_accordion_questions_are_kept(): void
