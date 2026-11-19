@@ -59,7 +59,7 @@ class ListingsTest extends WP_UnitTestCase
             .'</div><!-- /wp:query -->';
     }
 
-    public function test_an_archive_lists_up_to_a_hundred_per_page(): void
+    public function test_an_archive_that_fits_comes_whole_on_its_first_page(): void
     {
         $this->posts(12);
         $this->listings->register();
@@ -67,6 +67,62 @@ class ListingsTest extends WP_UnitTestCase
         $this->go_to(get_category_link($this->category));
 
         $this->assertCount(12, $GLOBALS['wp_query']->posts);
+        $this->assertSame(1, (int) $GLOBALS['wp_query']->max_num_pages);
+    }
+
+    /**
+     * Page N of the markdown is page N of the HTML, which advertises it: a
+     * longer archive keeps the HTML page size, and so does any page past the
+     * first.
+     */
+    public function test_an_archive_that_does_not_fit_keeps_the_html_pages(): void
+    {
+        $this->posts(7);
+        $this->listings->register();
+        $fits = fn () => 5;
+
+        add_filter('gds/llms/markdown_per_page', $fits);
+        $this->go_to(get_category_link($this->category));
+        $first = $GLOBALS['wp_query'];
+        $this->go_to(get_pagenum_link(3));
+        $third = $GLOBALS['wp_query'];
+        remove_filter('gds/llms/markdown_per_page', $fits);
+
+        $this->assertCount(3, $first->posts);
+        $this->assertSame(3, (int) $first->max_num_pages);
+        $this->assertCount(1, $third->posts);
+    }
+
+    /**
+     * A theme that sets the archive's size in pre_get_posts sets it again on
+     * the re-run.
+     */
+    public function test_an_archive_comes_whole_despite_the_theme_setting_its_size(): void
+    {
+        $this->posts(12);
+        $this->listings->register();
+        $theme = function (\WP_Query $query) {
+            if ($query->is_main_query()) {
+                $query->set('posts_per_page', 2);
+            }
+        };
+
+        add_action('pre_get_posts', $theme, 0);
+        $this->go_to(get_category_link($this->category));
+        remove_action('pre_get_posts', $theme, 0);
+
+        $this->assertCount(12, $GLOBALS['wp_query']->posts);
+    }
+
+    public function test_page_two_of_an_archive_that_fits_still_exists(): void
+    {
+        $this->posts(4);
+        $this->listings->register();
+
+        $this->go_to(get_category_link($this->category));
+        $this->go_to(get_pagenum_link(2));
+
+        $this->assertCount(1, $GLOBALS['wp_query']->posts);
     }
 
     public function test_a_paged_query_loop_lists_up_to_a_hundred_per_page(): void
@@ -90,20 +146,21 @@ class ListingsTest extends WP_UnitTestCase
     }
 
     /**
-     * A site sets the size per listing, or keeps one as the HTML page has it.
+     * A site sets the size per listing, or keeps one as the HTML page has it;
+     * for an archive, the size up to which it comes whole.
      */
     public function test_the_page_size_is_filterable_per_listing(): void
     {
         $this->posts(12);
         $this->listings->register();
-        $size = fn (int $perPage, $listing) => is_array($listing) ? 3 : 5;
+        $size = fn (int $perPage, $listing) => is_array($listing) ? 3 : 20;
 
         add_filter('gds/llms/markdown_per_page', $size, 10, 2);
         $this->go_to(get_category_link($this->category));
         $loop = do_blocks($this->queryLoop(true));
         remove_filter('gds/llms/markdown_per_page', $size);
 
-        $this->assertCount(5, $GLOBALS['wp_query']->posts);
+        $this->assertCount(12, $GLOBALS['wp_query']->posts);
         $this->assertSame(3, substr_count($loop, 'wp-block-post-title'));
     }
 
