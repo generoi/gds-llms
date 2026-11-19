@@ -26,10 +26,12 @@ class Frontmatter
     public function yaml(): string
     {
         $offer = $this->offer();
+        $cart = $this->cartOptions();
         $fields = [
             'title' => $this->meta('og:title') ?: Format::text($this->doc->querySelector('title')?->textContent),
             'description' => $this->meta('description') ?: $this->meta('og:description'),
             'image' => $this->meta('og:image'),
+            'images' => $this->metas('gds-llms:image'),
             'url' => $this->doc->querySelector('link[rel="canonical"]')?->getAttribute('href') ?: $this->base,
             'language' => $language = Format::text($this->doc->documentElement?->getAttribute('lang')),
             'translations' => $this->translations($language),
@@ -39,7 +41,9 @@ class Frontmatter
             'currency' => $this->meta('product:price:currency') ?: $offer['priceCurrency'],
             'availability' => $this->meta('product:availability') ?: $offer['availability'],
             'sku' => $this->meta('product:retailer_item_id') ?: $offer['sku'],
-            'add_to_cart' => $this->addToCart(),
+            'add_to_cart' => $this->addToCart($cart),
+            // A simple product's; each option carries its own.
+            'max_quantity' => array_keys($cart) === [''] ? (int) ($cart['']['max_quantity'] ?? 0) : 0,
         ];
 
         $lines = [];
@@ -93,16 +97,14 @@ class Frontmatter
     }
 
     /**
-     * The links that put the product in the cart, from the WooCommerce
-     * integration's `gds-llms:add-to-cart` tags: the one URL of a simple
-     * product, whose price and availability are the page's own; else each
-     * option keyed by what tells it apart (a variation's attributes), with
-     * its own price and availability, as a one-line mapping like the
-     * translations.
+     * What puts the product in the cart, from the WooCommerce integration's
+     * `gds-llms:add-to-cart` tags: each option keyed by what tells it apart
+     * (a variation's attributes; '' for a simple product), with its URL,
+     * price, availability and how many can be bought where that is limited.
      *
-     * @return string|array<string, array<string, string>>
+     * @return array<string, array<string, string|int>>
      */
-    protected function addToCart(): string|array
+    protected function cartOptions(): array
     {
         $options = [];
         foreach ($this->doc->querySelectorAll('meta[name="gds-llms:add-to-cart"][content]') as $meta) {
@@ -110,10 +112,41 @@ class Frontmatter
                 'url' => (string) $meta->getAttribute('content'),
                 'price' => (string) $meta->getAttribute('data-price'),
                 'availability' => (string) $meta->getAttribute('data-availability'),
+                'max_quantity' => (int) $meta->getAttribute('data-max-quantity'),
             ]);
         }
 
-        return array_keys($options) === [''] ? ($options['']['url'] ?? '') : $options;
+        return $options;
+    }
+
+    /**
+     * The one URL of a simple product, whose price and availability are the
+     * page's own; else each option as a one-line mapping like the
+     * translations.
+     *
+     * @param  array<string, array<string, string|int>>  $options
+     * @return string|array<string, array<string, string|int>>
+     */
+    protected function addToCart(array $options): string|array
+    {
+        return array_keys($options) === [''] ? (string) ($options['']['url'] ?? '') : $options;
+    }
+
+    /**
+     * The content of every `<meta>` named by `name`, in page order.
+     *
+     * @return string[]
+     */
+    protected function metas(string $name): array
+    {
+        $values = [];
+        foreach ($this->doc->querySelectorAll('meta[content]') as $meta) {
+            if ($meta->getAttribute('name') === $name) {
+                $values[] = Format::text($meta->getAttribute('content'));
+            }
+        }
+
+        return array_values(array_filter($values));
     }
 
     /**

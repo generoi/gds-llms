@@ -17,6 +17,9 @@ class ListingsTest extends WP_UnitTestCase
         parent::set_up();
 
         $this->set_permalink_structure('/%postname%/');
+        // Categories took their permastruct from the structure they were registered under.
+        create_initial_taxonomies();
+        flush_rewrite_rules();
         update_option('posts_per_page', 3);
         $this->category = self::factory()->category->create(['name' => 'News']);
         $this->listings = new Listings;
@@ -153,7 +156,27 @@ class ListingsTest extends WP_UnitTestCase
         $markdown = $this->markdown();
 
         $this->assertStringContainsString('5 results, page 1 of 2.', $markdown);
-        $this->assertStringContainsString('- [2]('.get_pagenum_link(2).')', $markdown);
+        $this->assertStringContainsString('- [2]('.Markdown::url(get_pagenum_link(2)).')', $markdown);
+    }
+
+    /**
+     * A category lists the subcategories that have posts, on its first page.
+     */
+    public function test_a_category_links_its_subcategories(): void
+    {
+        $pumps = self::factory()->category->create(['name' => 'Pumps', 'parent' => $this->category]);
+        self::factory()->category->create(['name' => 'Empty', 'parent' => $this->category]);
+        self::factory()->post->create(['post_category' => [$pumps]]);
+        $this->posts(5);
+
+        $this->go_to(get_category_link($this->category));
+        $first = $this->markdown();
+        $this->go_to(get_pagenum_link(2));
+        $second = $this->markdown();
+
+        $this->assertStringContainsString("**Categories**\n\n- [Pumps](".get_category_link($pumps).")\n\n", $first);
+        $this->assertStringNotContainsString('Empty', $first);
+        $this->assertStringNotContainsString('**Categories**', $second);
     }
 
     /**

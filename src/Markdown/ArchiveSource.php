@@ -9,12 +9,14 @@ use GeneroWP\Llms\Integrations\WooCommerce;
 use GeneroWP\Llms\LlmsTxt\Document;
 use WP_Post;
 use WP_Query;
+use WP_Term;
 
 /**
  * A listing -- the blog, a category or tag, a post type archive, a shop, a
  * page standing in for one -- built from its query, since no template
- * renders: the title and introduction, the result count, each post as a link
- * with its description (and a product's price), then the pages.
+ * renders: the title and introduction, a term's subterms, the result count,
+ * each post as a link with its description (and a product's price), then
+ * the pages.
  */
 class ArchiveSource implements Source
 {
@@ -41,12 +43,14 @@ class ArchiveSource implements Source
 
         // The title goes in <title>: the converter makes it the H1 unless the
         // introduction already has one.
-        $main = $intro.'<p>'.esc_html(Format::resultCount((int) $this->query->found_posts, $page, $pages)).'</p>';
+        $main = $intro.($page === 1 ? $this->children() : '');
+        $main .= '<p>'.esc_html(Format::resultCount((int) $this->query->found_posts, $page, $pages)).'</p>';
         $main .= $this->list(array_map(fn (WP_Post $post) => $this->item($post), array_filter($this->query->posts, fn ($post) => $post instanceof WP_Post)));
 
+        // The pages' own markdown, where a reader paging through is going.
         if ($pages > 1) {
             $main .= '<p><strong>'.esc_html__('Pages').'</strong></p>'.$this->list(array_map(
-                fn (int $n) => sprintf('<a href="%s">%d</a>', esc_url(get_pagenum_link($n)), $n),
+                fn (int $n) => sprintf('<a href="%s">%d</a>', esc_url(Endpoint::url(get_pagenum_link($n)) ?: get_pagenum_link($n)), $n),
                 range(1, $pages),
             ));
         }
@@ -79,6 +83,35 @@ class ArchiveSource implements Source
         return is_home()
             ? [get_bloginfo('name'), '']
             : [wp_strip_all_tags(get_the_archive_title()), (string) get_the_archive_description()];
+    }
+
+    /**
+     * A term's subterms -- a product category's subcategories -- each linked,
+     * under the taxonomy's name: the way down to a narrower listing, which
+     * the results alone don't show. Empty ones are left out, as WordPress'
+     * category widgets leave them out.
+     */
+    protected function children(): string
+    {
+        $term = get_queried_object();
+
+        if (! $term instanceof WP_Term || ! is_taxonomy_hierarchical($term->taxonomy)) {
+            return '';
+        }
+
+        $children = get_terms(['taxonomy' => $term->taxonomy, 'parent' => $term->term_id, 'hide_empty' => true]);
+        $links = [];
+        foreach (is_array($children) ? $children : [] as $child) {
+            $url = get_term_link($child);
+
+            if (is_string($url)) {
+                $links[] = sprintf('<a href="%s">%s</a>', esc_url($url), esc_html($child->name));
+            }
+        }
+
+        $taxonomy = get_taxonomy($term->taxonomy);
+
+        return $links && $taxonomy ? '<p><strong>'.esc_html((string) $taxonomy->labels->name).'</strong></p>'.$this->list($links) : '';
     }
 
     protected function item(WP_Post $post): string
