@@ -147,5 +147,5 @@ msgid "https://genero.fi/"
 msgstr ""
 
 #: src/Integrations/WooCommerce.php:100
-msgid "A product's markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one."
-msgstr "Länkarna som lägger produkten i varukorgen finns i fältet `add_to_cart` i frontmattern i produktens markdown; lägg till `&quantity=2` i en länk för att köpa fler än en."
+msgid "A product's markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one, up to its `max_quantity` where it has one."
+msgstr "Länkarna som lägger produkten i varukorgen finns i fältet `add_to_cart` i frontmattern i produktens markdown; lägg till `&quantity=2` i en länk för att köpa fler än en, högst så många som fältet `max_quantity` anger där det finns."

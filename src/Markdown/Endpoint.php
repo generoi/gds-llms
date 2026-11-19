@@ -5,6 +5,7 @@ namespace GeneroWP\Llms\Markdown;
 use GeneroWP\Llms\CacheControl;
 use GeneroWP\Llms\Integrations\CacheTags;
 use GeneroWP\Llms\Integrations\FacetWP;
+use GeneroWP\Llms\Integrations\WooCommerce;
 use GeneroWP\Llms\Robots;
 use WP_Post;
 
@@ -219,6 +220,11 @@ class Endpoint
 
         // A post whose permalink is a file (see isHtmlPath()).
         if (is_singular() && $object instanceof WP_Post && self::url(get_permalink($object)) === '') {
+            $available = false;
+        }
+
+        // WooCommerce's cart, checkout and account pages.
+        if (WooCommerce::isShopperPage()) {
             $available = false;
         }
 

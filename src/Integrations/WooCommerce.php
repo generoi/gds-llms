@@ -101,7 +101,16 @@ class WooCommerce
                 /* translators: %s: currency code, e.g. EUR */
                 : __('Products can be bought online. Prices are in %s and exclude VAT.', 'gds-llms'),
             get_woocommerce_currency(),
-        ).' '.__('A product\'s markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one.', 'gds-llms');
+        ).' '.__('A product\'s markdown has the links that put it in the cart in the `add_to_cart` field of its frontmatter; add `&quantity=2` to a link to buy more than one, up to its `max_quantity` where it has one.', 'gds-llms');
+    }
+
+    /**
+     * The cart, the checkout and the account pages: what they show belongs to
+     * the visitor's session, and a reader has nothing to take from them.
+     */
+    public static function isShopperPage(): bool
+    {
+        return function_exists('is_cart') && (is_cart() || is_checkout() || is_account_page());
     }
 
     /**
@@ -154,9 +163,9 @@ class WooCommerce
 
     /**
      * What WooCommerce shows on a product page outside the post content: the
-     * short description above it, and the visible attributes ("Material:
-     * Bronze") of the Additional information tab below it. Unhook it to drop
-     * or replace them.
+     * short description above it, and below it the product's categories and
+     * the visible attributes ("Material: Bronze") of the Additional
+     * information tab. Unhook it to drop or replace them.
      */
     public static function productDetails(string $content, WP_Post $post): string
     {
@@ -169,6 +178,12 @@ class WooCommerce
         }
 
         $items = '';
+        $categories = wc_get_product_category_list($product->get_id(), ', ');
+        if ($categories !== '') {
+            $label = _n('Category:', 'Categories:', count($product->get_category_ids()), 'woocommerce');
+            $items .= sprintf('<li><strong>%s:</strong> %s</li>', esc_html(rtrim($label, ' :')), $categories);
+        }
+
         foreach ($product->get_attributes() as $attribute) {
             $value = $attribute->get_visible() ? $product->get_attribute($attribute->get_name()) : '';
 
@@ -184,7 +199,9 @@ class WooCommerce
      * Open Graph's product tags for a product: the price the shop displays
      * (with or without tax, as it is set up), its currency, stock status and
      * SKU. A product with no price -- sold on quote -- has none, and anything
-     * that is not a product has no tags at all.
+     * that is not a product has no tags at all. Then the gallery's images,
+     * and what puts the product in the cart: each link, with how many of it
+     * can be bought where the shop limits it (the quantity field's own max).
      */
     public static function productMeta(WP_Post $post): string
     {
@@ -204,15 +221,23 @@ class WooCommerce
             $head .= sprintf('<meta property="%s" content="%s">', esc_attr($property), esc_attr((string) $value));
         }
 
+        foreach ($product->get_gallery_image_ids() as $id) {
+            if ($url = wp_get_attachment_image_url((int) $id, 'full')) {
+                $head .= sprintf('<meta name="gds-llms:image" content="%s">', esc_url($url));
+            }
+        }
+
         // On the permalink, as add_to_cart_url() would build them on the
         // markdown URL being served.
         foreach (self::cartItems($product) as $label => $item) {
+            $max = $item->get_max_purchase_quantity();
             $head .= sprintf(
-                '<meta name="gds-llms:add-to-cart" content="%s" data-label="%s" data-price="%s" data-availability="%s">',
+                '<meta name="gds-llms:add-to-cart" content="%s" data-label="%s" data-price="%s" data-availability="%s" data-max-quantity="%s">',
                 esc_url(add_query_arg('add-to-cart', $item->get_id(), $product->get_permalink())),
                 esc_attr((string) $label),
                 esc_attr(self::displayPrice($item)),
                 esc_attr(self::availability($item)),
+                $max > 0 ? $max : '',
             );
         }
 
